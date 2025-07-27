@@ -1,0 +1,19 @@
+{
+  "name": "focusly-bot",
+  "version": "1.0.0",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "dotenv": "^16.4.0",
+    "express": "^5.1.0",
+    "mongodb": "^5.7.0",
+    "mongoose": "^8.16.4",
+    "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.61.0",
+    "openai": "^5.10.2"
+  }
+
+}
