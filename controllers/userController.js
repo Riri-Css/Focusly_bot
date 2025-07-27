@@ -1,4 +1,4 @@
-const User = require('../models/User');
+const User = require('../models/user');
 
 async function findOrCreateUser(telegramId) {
   let user = await User.findOne({ telegramId });
