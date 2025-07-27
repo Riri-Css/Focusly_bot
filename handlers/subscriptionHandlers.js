@@ -1,6 +1,6 @@
 // subscriptionHandlers.js
 
-const { generatePaystackLink } = require("./utils/paymentUtils");
+const { generatePaystackLink } = require("../utils/paymentUtils");
 
 const handleSubscribeCommand = async (bot, msg) => {
   const chatId = msg.chat.id;

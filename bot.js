@@ -62,7 +62,7 @@ bot.onText(/\/start/, async (msg) => {
 
 });
 
-const { handleSubscribeCommand, handleSubscriptionCallback } = require("./subscriptionHandlers");
+const { handleSubscribeCommand, handleSubscriptionCallback } = require("./handlers/subscriptionHandlers");
 
 bot.onText(/\/subscribe/, (msg) => {
   handleSubscribeCommand(bot, msg);
