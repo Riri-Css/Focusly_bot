@@ -1,5 +1,5 @@
 // helpers/checkSubscriptionStatus.js
-const User = require('../models/User');
+const User = require('../models/user');
 
 module.exports = async function checkSubscriptionStatus(user) {
   if (!user) return false;
