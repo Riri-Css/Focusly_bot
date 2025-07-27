@@ -7,7 +7,7 @@ const handleMessage = require('./handlers/messageHandlers');
 const { handleSubscribeCommand, handleSubscriptionCallback } = require("./handlers/subscriptionHandlers");
 const { findOrCreateUser } = require('./models/userModel'); // Make sure this exists
 const User = require('./models/userModel'); // Needed for cron jobs
-
+const { findOrCreator } = require('./models/userModel'); // Needed for user creation
 const app = express();
 app.use(express.json());
 

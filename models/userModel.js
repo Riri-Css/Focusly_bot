@@ -18,4 +18,23 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
+
+// ✅ Add this helper function
+const findOrCreateUser = async (telegramId) => {
+  let user = await User.findOne({ telegramId });
+  if (!user) {
+    user = new User({
+      telegramId,
+      trialStartDate: new Date(),
+    });
+    await user.save();
+  }
+  return user;
+};
+
+// ✅ Export both
+module.exports = {
+  User,
+  findOrCreateUser
+};
