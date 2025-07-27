@@ -52,6 +52,7 @@ bot.setWebHook(`${URL}/bot${process.env.BOT_TOKEN}`);
 
 // ✅ Express Webhook Handler
 app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
+  console.log('🔔 Received webhook update:', req.body);
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
