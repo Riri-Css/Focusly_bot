@@ -1,19 +1,24 @@
 require('dotenv').config();
+const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
-const handleMessage = require('./handlers/messageHandlers');
 const cron = require('node-cron');
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
+const handleMessage = require('./handlers/messageHandlers');
+const { handleSubscribeCommand, handleSubscriptionCallback } = require("./handlers/subscriptionHandlers");
+const { findOrCreateUser } = require('./models/userModel'); // Make sure this exists
+const User = require('./models/userModel'); // Needed for cron jobs
 
-// Connect to MongoDB
+const app = express();
+app.use(express.json());
+
+const bot = new TelegramBot(process.env.BOT_TOKEN, { webHook: { port: 443 } });
+
+// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('✅ MongoDB connected');
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
-  });
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch((err) => console.error('❌ MongoDB connection error:', err));
 
+// 🧠 START REMINDERS
 const startDailyReminders = require('./utils/cronJobs');
 startDailyReminders(bot);
 
@@ -43,8 +48,16 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
+// 🔗 Telegram Webhook Setup
+const URL = process.env.RENDER_EXTERNAL_URL; // e.g., https://focusly-bot-2.onrender.com
+bot.setWebHook(`${URL}/bot${process.env.BOT_TOKEN}`);
 
-// Handle incoming messages
+app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// 📩 Handle messages
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const telegramId = msg.from.id.toString();
@@ -52,17 +65,12 @@ bot.onText(/\/start/, async (msg) => {
   const user = await findOrCreateUser(telegramId);
 
   if (user.stage !== 'completed_onboarding') {
-    // Continue onboarding
     await bot.sendMessage(chatId, 'Let’s get you started again...');
     return handleMessage(bot, msg, true);
   } else {
-    // Returning user
     return bot.sendMessage(chatId, `👋 Welcome back, *${user.name}*!\nYour focus is still *${user.focus}*.\n\nWhat would you like to do today?\n\n1. Plan today’s tasks\n2. View yesterday’s tasks\n3. Change my focus\n\n(Reply with the number)`, { parse_mode: 'Markdown' });
   }
-
 });
-
-const { handleSubscribeCommand, handleSubscriptionCallback } = require("./handlers/subscriptionHandlers");
 
 bot.onText(/\/subscribe/, (msg) => {
   handleSubscribeCommand(bot, msg);
@@ -72,4 +80,4 @@ bot.on("callback_query", (callbackQuery) => {
   handleSubscriptionCallback(bot, callbackQuery);
 });
 
-module.exports = bot;
+module.exports = app;
