@@ -2,7 +2,7 @@ const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { analyzeChecklistIntent } = require('../Ai/intentAnalyzer');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
-const User = require('../models/User');
+const User = require('../models/user');
 const axios = require('axios');
 const checkSubscriptionStatus = require('../helpers/checkSubscriptionStatus');
 
