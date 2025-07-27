@@ -11,34 +11,32 @@ const User = require('./models/userModel'); // Needed for cron jobs
 const app = express();
 app.use(express.json());
 
-const bot = new TelegramBot(process.env.BOT_TOKEN, { webHook: { port: 443 } });
+// ✅ Replace polling with webhook-compatible bot (do NOT set port here)
+const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// MongoDB connection
+// ✅ MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
   .catch((err) => console.error('❌ MongoDB connection error:', err));
 
-// 🧠 START REMINDERS
+// ✅ Start cron reminders
 const startDailyReminders = require('./utils/cronJobs');
 startDailyReminders(bot);
 
-// 🕗 Daily check-in reminder at 8 PM
+// 🕗 8 PM daily check-in reminder
 cron.schedule('0 20 * * *', async () => {
   console.log('🔔 Running daily check-in reminders at 8PM');
-
   try {
     const users = await User.find({ hasCheckedInToday: false });
-
     for (const user of users) {
       await bot.sendMessage(user.telegramId, `👋 Hey ${user.name}, have you completed your tasks for today?\nReply with ✅ if yes, ❌ if not.`);
     }
-
   } catch (error) {
     console.error('❌ Error sending daily check-in reminders:', error);
   }
 });
 
-// 🌙 Reset check-in flags daily at midnight
+// 🌙 Reset check-in flags at midnight
 cron.schedule('0 0 * * *', async () => {
   try {
     await User.updateMany({}, { hasCheckedInToday: false });
@@ -48,16 +46,17 @@ cron.schedule('0 0 * * *', async () => {
   }
 });
 
-// 🔗 Telegram Webhook Setup
-const URL = process.env.RENDER_EXTERNAL_URL; // e.g., https://focusly-bot-2.onrender.com
+// ✅ Telegram Webhook Setup
+const URL = process.env.RENDER_EXTERNAL_URL;
 bot.setWebHook(`${URL}/bot${process.env.BOT_TOKEN}`);
 
+// ✅ Express Webhook Handler
 app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// 📩 Handle messages
+// 📩 Handle /start messages
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const telegramId = msg.from.id.toString();
@@ -78,6 +77,12 @@ bot.onText(/\/subscribe/, (msg) => {
 
 bot.on("callback_query", (callbackQuery) => {
   handleSubscriptionCallback(bot, callbackQuery);
+});
+
+// ✅ Start Express server (REQUIRED for Render)
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Webhook server running on port ${PORT}`);
 });
 
 module.exports = app;
