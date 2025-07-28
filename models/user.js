@@ -1,62 +1,82 @@
 const mongoose = require('mongoose');
 
-const taskSchema = new mongoose.Schema({
-  text: String,
-  completed: { type: Boolean, default: false },
-});
-
-const historySchema = new mongoose.Schema({
-  date: String,
-  focus: String,
-  tasks: String,
-  checkedIn: Boolean,
-});
-
 const userSchema = new mongoose.Schema({
-  telegramId: { type: String, required: true, unique: true },
+  telegramId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  username: String,
   name: String,
   focus: String,
-  onboardingStep: String,
+  stage: {
+    type: String,
+    default: 'awaiting_name'
+  },
 
-  // For streaks & check-ins
-  lastCheckInDate: Date,
-  streak: { type: Number, default: 0 },
-
-  // Smart AI-generated tasks
+  // Onboarding & daily tasks
+  manualChecklist: [String],
+  dailyChecklist: [String],
   weeklyChecklist: {
-    weekStart: Date, // e.g. Monday of the current week
-    tasks: [taskSchema],
+    source: String,
+    raw: [String],
+    createdAt: Date
+  },
+  currentChecklistDay: Number,
+  hasCheckedInToday: {
+    type: Boolean,
+    default: false
+  },
+  lastCheckInDate: String,
+  streak: {
+    type: Number,
+    default: 0
   },
 
-  dailyChecklist: {
-    date: Date, // YYYY-MM-DD
-    tasks: [taskSchema],
+  // Reflections
+  history: [
+    {
+      date: String,
+      focus: String,
+      checkedIn: Boolean,
+      tasks: [String]
+    }
+  ],
+
+  // Feedback tracking
+  feedbackGiven: {
+    type: Boolean,
+    default: false
+  },
+  feedbackRequestedAt: Date,
+  feedbacks: [
+    {
+      date: Date,
+      text: String
+    }
+  ],
+
+  // Subscription & trial
+  subscriptionStatus: {
+    type: String,
+    enum: ['trial', 'subscribed', 'expired'],
+    default: 'trial'
+  },
+  trialStartDate: Date,
+  subscriptionPlan: {
+    type: String,
+    enum: ['basic', 'premium']
+  },
+  subscriptionExpiryDate: Date,
+  isSubscribed: {
+    type: Boolean,
+    default: false
   },
 
-  // Manually provided by user
-  manualChecklist: [String], 
-
-  // For step-by-step tracking
-  currentChecklistDay: { type: Number, default: 1 },
-
-  // For daily reflection journaling
-  reflections: [String],
-
-  // History of progress
-  history: [historySchema],
-
-  // Subscription and trial tracking
-  isSubscribed: { type: Boolean, default: false },
-  trialStartedAt: { type: Date, default: Date.now },
-
-  subscription: {
-    planCode: String,
-    planName: String,
-    subscribedAt: Date,
-    expiresAt: Date
-  },
-
-  createdAt: { type: Date, default: Date.now }
+  // Career assistant
+  strengths: [String],
+  interests: [String],
+  recommendedCareers: [String]
 });
 
-module.exports = mongoose.models.user || mongoose.model('user', userSchema);
+module.exports = mongoose.model('User', userSchema);

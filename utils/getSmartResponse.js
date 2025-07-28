@@ -1,43 +1,35 @@
 const OpenAI = require('openai');
 require('dotenv').config();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let openai;
 
-// General smart response
-async function getSmartResponse(message, user) {
-  try {
-    const prompt = `
-You are Focusly, a smart productivity and goal-setting assistant inside Telegram. The user you're chatting with is focused on: "${user.focus}".
-
-Your job is to give smart, helpful responses. Be friendly but strict when needed. Be short and to the point.
-
-Here’s what the user said: "${message}"
-
-Now respond in a helpful and motivational way.
-    `;
-
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    return res.choices[0].message.content.trim();
-  } catch (error) {
-    console.error('Smart response error:', error);
-    return "Sorry, I couldn’t think of a smart reply right now.";
-  }
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
 }
 
-// Career recommendation
-async function getCareerRecommendation(user) {
+// Smart fallback function
+function isAIReady() {
+  return openai && process.env.OPENAI_API_KEY;
+}
+
+// General smart response
+async function getSmartResponse(user, message, mode = 'default') {
+  if (!isAIReady()) {
+    return "🤖 Smart reply unavailable. Please try again later or upgrade your plan.";
+  }
+
   try {
     const prompt = `
-A user is trying to choose a career path. Their main focus is: "${user.focus}".
+You are Focusly, a productivity coach inside Telegram. The user is focused on: "${user.focus}".
 
-Suggest 3 career paths that align with this focus, and explain each in 1 short sentence.
-Avoid generic advice. Make sure your suggestions are relevant and modern.
+The user said: "${message}"
+
+Respond in a way that is helpful, direct, and motivating. Use a friendly tone.
+${mode === 'checkin_success' ? "They completed their tasks. Celebrate and encourage them to keep going." : ""}
+${mode === 'stuck_analysis' ? "They skipped their tasks. Give a tough-love but helpful explanation of possible mindset or habits causing this." : ""}
+${mode === 'onboarding_boost' ? "They just set their focus. Encourage them and help them feel excited about their journey." : ""}
 `;
 
     const res = await openai.chat.completions.create({
@@ -47,20 +39,47 @@ Avoid generic advice. Make sure your suggestions are relevant and modern.
 
     return res.choices[0].message.content.trim();
   } catch (error) {
-    console.error('Career recommendation error:', error);
-    return "Hmm... I couldn't generate a good career path right now. Try again soon!";
+    console.error('Smart response error:', error.message);
+    return "❌ An unexpected error occurred. Please try again later.";
   }
 }
 
-// Intent detection for checklists
-async function analyzeChecklistIntent(userMessage) {
+// Career recommendation
+async function getCareerRecommendation(user) {
+  if (!isAIReady()) {
+    return "💼 Career advice is currently unavailable. Please try again later.";
+  }
+
   try {
     const prompt = `
-Does the following message sound like the user is trying to provide a checklist (daily tasks) or just chatting?
+A user wants help deciding their career path. Their focus is: "${user.focus}".
 
-Message: "${userMessage}"
+Suggest 3 modern, realistic career paths aligned with this focus. Briefly explain each.
+`;
 
-Respond with exactly one word: "checklist" or "chat"
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    return res.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('Career recommendation error:', error.message);
+    return "⚠️ Couldn't generate a career suggestion right now.";
+  }
+}
+
+// Checklist intent detection
+async function analyzeChecklistIntent(userMessage) {
+  if (!isAIReady()) return null;
+
+  try {
+    const prompt = `
+Does this message sound like a checklist (daily tasks) or regular chat?
+
+"${userMessage}"
+
+Respond with only one word: "checklist" or "chat"
 `;
 
     const res = await openai.chat.completions.create({
@@ -70,15 +89,13 @@ Respond with exactly one word: "checklist" or "chat"
 
     return res.choices[0].message.content.trim().toLowerCase();
   } catch (error) {
-    console.error('Intent analysis error:', error);
-    return "chat"; // default to chat if uncertain
+    console.error('Intent analysis error:', error.message);
+    return null;
   }
 }
 
 module.exports = {
   getSmartResponse,
   getCareerRecommendation,
-  analyzeChecklistIntent,
+  analyzeChecklistIntent
 };
-// This module provides functions to interact with OpenAI's API for generating smart responses,
-// career recommendations, and intent detection for user messages in a productivity-focused Telegram bot.

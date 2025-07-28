@@ -10,7 +10,8 @@ const User = require('./models/userModel'); // Needed for cron jobs
 const { findOrCreator } = require('./models/userModel'); // Needed for user creation
 const app = express();
 app.use(express.json());
-
+const webhookRoutes = require('./routes/paystackWebhook'); // Import webhook routes
+app.use('/api', webhookRoutes); // Mount webhook routes
 // ✅ Replace polling with webhook-compatible bot (do NOT set port here)
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 

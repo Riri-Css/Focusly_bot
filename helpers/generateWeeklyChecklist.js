@@ -1,32 +1,59 @@
-// utils/generateWeeklyChecklist.js
-const { openai } = require('../utils/openai'); // Make sure your openai instance is properly exported
+const OpenAI = require('openai');
+require('dotenv').config();
 
-async function generateWeeklyChecklist(userFocus) {
-  const prompt = `
-You are a productivity assistant. Generate a detailed but simple 7-day checklist to help someone stay consistent with their goal:
-"${userFocus}"
+let openai;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
-Checklist must include 5–7 specific and achievable tasks per day.
-Respond in this format:
-Day 1:
-- Task 1
-- Task 2
-...
-Day 2:
-- Task 1
-...
+async function generateWeeklyChecklist(focus) {
+  if (!openai) {
+    // 🔙 Fallback if OpenAI is unavailable
+    return [
+      `Work on something related to: ${focus}`,
+      `Read or research more on ${focus}`,
+      `Practice a task that improves your skills in ${focus}`,
+      `Review your progress on ${focus}`,
+      `Seek feedback or mentorship related to ${focus}`,
+      `Make a small but bold improvement regarding ${focus}`,
+      `Reflect on why ${focus} matters to you`
+    ];
+  }
 
-Avoid vague tasks like "Be consistent". Focus on real, measurable tasks.
+  try {
+    const prompt = `
+You're Focusly AI. A user has committed to this focus: "${focus}".
+
+Generate a 7-day task checklist that will help them make tangible progress toward this focus. Each task should be clear, action-oriented, and short.
+
+Format your output as a bullet-point list with 7 items.
 `;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [{ role: "user", content: prompt }],
-  });
+    const res = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: prompt }],
+    });
 
-  const text = response.choices[0].message.content;
-  return text;
+    const checklist = res.choices[0].message.content
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => line.replace(/^[-*•\d.]+\s*/, '').trim());
+
+    return checklist.slice(0, 7); // Always return 7 items
+  } catch (error) {
+    console.error('Checklist generation error:', error.message);
+
+    // Return fallback checklist if API fails
+    return [
+      `Work on something related to: ${focus}`,
+      `Read or research more on ${focus}`,
+      `Practice a task that improves your skills in ${focus}`,
+      `Review your progress on ${focus}`,
+      `Seek feedback or mentorship related to ${focus}`,
+      `Make a small but bold improvement regarding ${focus}`,
+      `Reflect on why ${focus} matters to you`
+    ];
+  }
 }
 
 module.exports = generateWeeklyChecklist;
-// This module generates a weekly checklist based on the user's focus using OpenAI's API.

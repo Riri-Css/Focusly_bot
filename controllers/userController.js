@@ -1,37 +1,51 @@
 const User = require('../models/user');
 
+// Find user by Telegram ID or create a new one
 async function findOrCreateUser(telegramId) {
   let user = await User.findOne({ telegramId });
+
   if (!user) {
-    user = await User.create({ telegramId, stage: 'awaiting_name' });
+    user = new User({
+      telegramId,
+      streak: 0,
+      hasCheckedInToday: false,
+      trialStartDate: new Date(),
+      subscriptionStatus: 'trial',
+    });
+
+    await user.save();
   }
+
   return user;
 }
 
-async function updateUserStageAndFocus(user, name, focus) {
-  user.name = name || user.name;
-  user.focus = focus || user.focus;
-  user.stage = 'awaiting_tasks';
-  await user.save();
+// Update user data
+async function updateUser(telegramId, data) {
+  return await User.findOneAndUpdate({ telegramId }, data, { new: true });
 }
 
-async function addDailyTasks(user, tasksArray) {
-  const today = new Date();
-  const formattedDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+// Add daily checklist tasks
+async function addDailyTasks(user, tasks) {
+  const today = new Date().toISOString().split('T')[0];
 
-  const tasksToAdd = tasksArray.map(task => ({
-    content: task,
-    date: formattedDate,
-    completed: false,
-  }));
+  if (!user.history) user.history = [];
 
-  user.dailyTasks.push(...tasksToAdd);
-  user.stage = 'completed_onboarding';
+  user.history.push({
+    date: today,
+    focus: user.focus,
+    tasks,
+    checkedIn: false
+  });
+
+  user.dailyChecklist = tasks;
+  user.hasCheckedInToday = false;
+  user.lastCheckInDate = today;
+
   await user.save();
 }
 
 module.exports = {
   findOrCreateUser,
-  updateUserStageAndFocus,
-  addDailyTasks
+  updateUser,
+  addDailyTasks,
 };
