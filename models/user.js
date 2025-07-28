@@ -16,7 +16,11 @@ const userSchema = new mongoose.Schema({
 
   // Onboarding & daily tasks
   manualChecklist: [String],
-  dailyChecklist: [String],
+  dailyChecklist: [
+    {
+      tasks: [String],
+    }
+  ],
   weeklyChecklist: {
     source: String,
     raw: [String],
