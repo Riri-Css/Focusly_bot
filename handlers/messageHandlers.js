@@ -22,7 +22,9 @@ module.exports = function (bot) {
     const trialDays = Math.floor((now - trialStart) / (1000 * 60 * 60 * 24));
     const isTrialExpired = trialDays > 14;
     const isSubscribed = user.subscription?.isActive && user.subscription?.hasPaid;
+    const userId = msg.from.id;
     if (!(await checkAccess(userId))) {
+
   await bot.sendMessage(chatId, `🔒 Your access has expired.\n\nPlease subscribe to continue using Focusly:`, {
     reply_markup: {
       inline_keyboard: [
