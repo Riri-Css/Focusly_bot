@@ -1,6 +1,6 @@
 // utils/checkAccess.js
 
-const User = require('../models/User');
+const User = require('../models/user');
 
 const checkAccess = async (userId) => {
   const user = await User.findOne({ telegramId: userId });
