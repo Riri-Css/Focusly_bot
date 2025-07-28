@@ -1,6 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
 const User = require('../models/user');
-const getSmartResponse = require('../utils/getSmartResponse');
+const {
+  getSmartResponse,
+  getCareerRecommendation,
+  analyzeChecklistIntent
+} = require('../utils/getSmartResponse');
 const { getDailyChecklist, getWeeklyChecklist } = require('../utils/generateChecklist');
 const { checkAccess } = require('../utils/subscriptionUtils');
 
