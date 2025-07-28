@@ -6,7 +6,7 @@ const cron = require('node-cron');
 const handleMessage = require('./handlers/messageHandlers');
 const { handleSubscribeCommand, handleSubscriptionCallback } = require("./handlers/subscriptionHandlers");
 const { findOrCreateUser } = require('./controllers/userController'); // Make sure this exists
-const User = require('./models/userModel'); // Needed for cron jobs
+const User = require('../models/userModel'); // Needed for cron jobs
 const app = express();
 app.use(express.json());
 const webhookRoutes = require('./routes/paystackWebhook'); // Import webhook routes
