@@ -1,3 +1,4 @@
+const { checkAccess } = require('../utils/subscriptionUtils');
 const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/userController');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { analyzeChecklistIntent } = require('../Ai/intentAnalyzer');
