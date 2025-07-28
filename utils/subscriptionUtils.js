@@ -1,6 +1,6 @@
 // utils/subscriptionUtils.js
 
-const User = require('../models/User');
+const User = require('../models/user');
 
 const checkAccess = async (telegramId) => {
   const user = await User.findOne({ telegramId });
