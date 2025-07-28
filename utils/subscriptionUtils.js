@@ -1,26 +1,31 @@
-// utils/subscriptionUtils.js
+// utils/checkAccess.js
 
-const User = require('../models/user');
+const User = require('../models/User');
 
-const checkAccess = async (telegramId) => {
-  const user = await User.findOne({ telegramId });
+const checkAccess = async (userId) => {
+  const user = await User.findOne({ telegramId: userId });
 
   if (!user) return false;
 
-  const now = new Date();
+  // If they're on a trial
+  if (user.subscriptionStatus === 'trial') {
+    if (!user.trialStartDate) return false;
 
-  if (user.subscriptionStatus === 'subscribed' && user.subscriptionExpiryDate > now) {
-    return true;
+    const now = new Date();
+    const trialEndsAt = new Date(user.trialStartDate);
+    trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
+    return now <= trialEndsAt;
   }
 
-  // If user is on trial and still within 14 days
-  if (user.subscriptionStatus === 'trial') {
-    const trialStart = user.trialStartDate;
-    const daysSinceTrialStart = Math.floor((now - trialStart) / (1000 * 60 * 60 * 24));
-    if (daysSinceTrialStart <= 14) return true;
+  // If they're subscribed
+  if (user.subscriptionStatus === 'subscribed') {
+    if (!user.subscriptionExpiryDate) return false;
+
+    return new Date() <= new Date(user.subscriptionExpiryDate);
   }
 
   return false;
 };
 
-module.exports = { checkAccess };
+module.exports = checkAccess;
