@@ -1,4 +1,4 @@
-const getSmartResponse = require('./getSmartResponse');
+const getSmartResponse = require('../utils/getSmartResponse');
 const { User } = require('../models/user');
 
 const fallbackWeeklyChecklist = [
