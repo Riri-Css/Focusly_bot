@@ -25,8 +25,8 @@ module.exports = function (bot) {
       Please subscribe to continue using Focusly:`, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '💳 Subscribe (Basic ₦1,000)', url: 'https://paystack.com/buy/focusly-basic' }],
-            [{ text: '🚀 Go Premium (₦1,500)', url: 'https://paystack.com/buy/focusly-premium' }]
+            [{ text: '💳 Subscribe (Basic ₦1,000)', url: 'https://paystack.shop/pay/gp92ecotgl' }],
+            [{ text: '🚀 Go Premium (₦1,500)', url: 'https://paystack.shop/pay/3h7bjtkh5g' }]
           ]
         }
       });
