@@ -1,4 +1,4 @@
-const { User } = require('../models/user');
+const User = require('../models/user');
 const { getAIModelAndAccess } = require('../utils/subscriptionUtils');
 
 // Find user by Telegram ID or create a new one
