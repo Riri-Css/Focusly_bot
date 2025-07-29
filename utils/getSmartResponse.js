@@ -1,61 +1,50 @@
-const OpenAI = require('openai');
+const { Configuration, OpenAIApi } = require('openai');
+const { incrementUsage, hasAccessToAI, isChecklistRequest } = require('../utils/subscriptionUtils');
 const { User } = require('../models/user');
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+require('dotenv').config();
 
-const MAX_DAILY_USES = {
-  trial: 5,
-  basic: 10,
-  premium: Infinity,
-  expired: 0
-};
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY
+});
+const openai = new OpenAIApi(configuration);
 
-// Check if user has access to smart response
-async function canUseAI(user) {
-  const today = new Date().toISOString().split('T')[0];
+async function getSmartResponse(user, input, isChecklist = false) {
+  // Check if user has access to AI
+  const canUseAI = await hasAccessToAI(user, isChecklist);
+  if (!canUseAI) {
+    return "🔒 You’ve reached your AI usage limit. Please upgrade your plan to continue using smart features.";
+  }
 
-  if (user.lastAiUseDate !== today) {
-    user.dailyAiUsageCount = 0;
-    user.lastAiUseDate = today;
-  }
+  // Determine model to use
+  let model = 'gpt-4o'; // Default for Trial and Premium
+  if (user.subscriptionStatus === 'trial' || user.subscriptionPlan === 'premium') {
+    model = 'gpt-4o';
+  } else if (user.subscriptionPlan === 'basic' && isChecklist) {
+    model = 'gpt-3.5-turbo'; // Basic users can only use GPT-3.5 for checklist generation
+  } else {
+    return "🚫 Smart suggestions are only available for premium users.";
+  }
 
-  const plan = user.subscriptionPlan || user.subscriptionStatus || 'trial';
-  const limit = MAX_DAILY_USES[plan] || 0;
+  // Build system prompt
+  const systemPrompt = isChecklist
+    ? `You're a productivity assistant. Generate a simple, actionable checklist based on the user's focus or goal.`
+    : `You’re Focusly’s AI coach. Be insightful, motivational, and practical. Help users with their goals, mindset, routines, or obstacles.`;
 
-  if (user.dailyAiUsageCount >= limit) {
-    return { allowed: false, reason: 'quota' };
-  }
+  try {
+    const response = await openai.createChatCompletion({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: input }
+      ]
+    });
 
-  user.dailyAiUsageCount += 1;
-  await user.save();
-  return { allowed: true };
-}
-
-async function getSmartResponse(user, message) {
-  const access = await canUseAI(user);
-  if (!access.allowed) {
-    if (user.subscriptionStatus === 'expired') {
-      return `🔒 Your access has expired. Please subscribe to continue using Focusly’s AI features.`;
-    }
-    return `🧠 You've reached your daily AI limit.\nUpgrade to Premium for unlimited smart responses.`;
-  }
-
-  try {
-    const prompt = `You're a friendly, but strict and no-nonsense accountability coach. The user said: "${message}". Respond with guidance, motivation, or a smart question.`;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: 'You are a helpful productivity coach named FocuslyBot.' },
-        { role: 'user', content: prompt }
-      ],
-      max_tokens: 100
-    });
-
-    return response.choices[0].message.content.trim();
-  } catch (err) {
-    console.error('Smart response error:', err.message);
-    return `Sorry, I couldn’t think of a smart reply right now.`;
-  }
+    await incrementUsage(user.telegramId, isChecklist);
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('❌ OpenAI error:', error.response?.data || error.message);
+    return "⚠️ I ran into an issue generating your response. Please try again later.";
+  }
 }
 
 module.exports = getSmartResponse;

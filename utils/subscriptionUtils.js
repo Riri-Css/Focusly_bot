@@ -1,68 +1,56 @@
-const User = require('../models/user');
+const { User } = require('../models/user');
 
-// Limit configuration
-const DAILY_TRIAL_LIMIT = 5;
-const WEEKLY_BASIC_LIMIT = 10;
+// Check if user has AI access and return their model
+async function getAIModelAndAccess(user) {
+  const today = new Date().toISOString().split('T')[0];
 
-// Check if user has AI access
-async function checkAccess(telegramId) {
-  const user = await User.findOne({ telegramId });
-  if (!user) return false;
-
-  const now = new Date();
-
-  // Expiry check
-  if (user.subscriptionStatus === 'expired') return false;
-
-  // Trial check
+  // Handle trial
   if (user.subscriptionStatus === 'trial') {
-    const trialEnds = new Date(user.trialStartDate);
-    trialEnds.setDate(trialEnds.getDate() + 14);
-
-    if (now > trialEnds) {
-      user.subscriptionStatus = 'expired';
-      await user.save();
-      return false;
-    }
-
-    if (!user.usageDate || new Date(user.usageDate).toISOString().split('T')[0] !== now.toISOString().split('T')[0]) {
+    // Reset daily usage if date changed
+    if (user.lastUsageDate !== today) {
       user.usageCount = 0;
-      user.usageDate = now;
+      user.lastUsageDate = today;
+      await user.save();
     }
 
-    return user.usageCount < DAILY_TRIAL_LIMIT;
+    if (user.usageCount < 5) {
+      return { allowed: true, model: 'gpt-4o' };
+    } else {
+      return { allowed: false, reason: 'Trial limit reached for today. Upgrade for unlimited access.' };
+    }
   }
 
-  // Subscribed user
+  // Handle subscribed users
   if (user.subscriptionStatus === 'subscribed') {
-    if (user.subscriptionExpiryDate && now > new Date(user.subscriptionExpiryDate)) {
-      user.subscriptionStatus = 'expired';
-      await user.save();
-      return false;
-    }
-
     if (user.subscriptionPlan === 'premium') {
-      return true; // unlimited
+      return { allowed: true, model: 'gpt-4o' };
     }
 
     if (user.subscriptionPlan === 'basic') {
-      const usageDate = new Date(user.usageDate || 0);
-      const weekStart = new Date();
-      weekStart.setHours(0, 0, 0, 0);
-      weekStart.setDate(now.getDate() - now.getDay()); // start of current week
-
-      if (usageDate < weekStart) {
+      const startOfWeek = getStartOfWeek();
+      if (!user.lastUsageDate || new Date(user.lastUsageDate) < startOfWeek) {
         user.usageCount = 0;
-        user.usageDate = now;
+        user.lastUsageDate = today;
+        await user.save();
       }
 
-      return user.usageCount < WEEKLY_BASIC_LIMIT;
+      if (user.usageCount < 10) {
+        return { allowed: true, model: 'gpt-3.5-turbo' };
+      } else {
+        return { allowed: false, reason: 'Weekly usage limit reached. Upgrade for unlimited access.' };
+      }
     }
   }
 
-  return false;
+  // Handle expired
+  return { allowed: false, reason: 'Access expired. Please subscribe to continue using AI.' };
 }
 
-module.exports = {
-  checkAccess
-};
+function getStartOfWeek() {
+  const now = new Date();
+  const day = now.getDay(); // Sunday is 0, Monday is 1...
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday as first day
+  return new Date(now.setDate(diff));
+}
+
+module.exports = { getAIModelAndAccess };

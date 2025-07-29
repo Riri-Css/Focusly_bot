@@ -1,16 +1,18 @@
-const User = require('../models/user');
+const { User } = require('../models/user');
+const { getAIModelAndAccess } = require('../utils/subscriptionUtils');
 
-// Find user or create a new one
+// Find user by Telegram ID or create a new one
 async function findOrCreateUser(telegramId) {
   let user = await User.findOne({ telegramId });
 
   if (!user) {
     user = new User({
       telegramId,
+      streak: 0,
+      hasCheckedInToday: false,
       trialStartDate: new Date(),
       subscriptionStatus: 'trial',
       usageCount: 0,
-      usageDate: new Date(),
     });
     await user.save();
   }
@@ -18,19 +20,16 @@ async function findOrCreateUser(telegramId) {
   return user;
 }
 
-// Update user
+// Update user data
 async function updateUser(telegramId, data) {
   return await User.findOneAndUpdate({ telegramId }, data, { new: true });
 }
 
-// Add daily checklist
-async function addDailyTasks(user, taskInput) {
+// Add daily checklist tasks
+async function addDailyTasks(user, tasks) {
   const today = new Date().toISOString().split('T')[0];
-  const tasks = typeof taskInput === 'string'
-    ? taskInput.split(',').map(task => task.trim())
-    : taskInput;
 
-  user.history = user.history || [];
+  if (!user.history) user.history = [];
 
   user.history.push({
     date: today,
@@ -46,41 +45,24 @@ async function addDailyTasks(user, taskInput) {
   await user.save();
 }
 
-// Increment usage and auto-reset when needed
-async function incrementAIUsage(user) {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
+// Get AI model if user has access
+async function getAIModel(user) {
+  const result = await getAIModelAndAccess(user);
+  if (!result.allowed) return { allowed: false, reason: result.reason };
 
-  if (!user.usageDate) {
-    user.usageDate = now;
-    user.usageCount = 0;
+  // Increase usage count only if under trial or basic
+  if (user.subscriptionStatus === 'trial' || user.subscriptionPlan === 'basic') {
+    user.usageCount += 1;
+    user.lastUsageDate = new Date().toISOString().split('T')[0];
+    await user.save();
   }
 
-  const isTrial = user.subscriptionStatus === 'trial';
-  const isBasic = user.subscriptionStatus === 'subscribed' && user.subscriptionPlan === 'basic';
-
-  const usageDate = new Date(user.usageDate);
-  const sameDay = usageDate.toISOString().split('T')[0] === today;
-
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(now.getDate() - now.getDay()); // Sunday as start of week
-
-  const sameWeek = usageDate >= weekStart;
-
-  if ((isTrial && !sameDay) || (isBasic && !sameWeek)) {
-    user.usageCount = 0;
-  }
-
-  user.usageDate = now;
-  user.usageCount += 1;
-
-  await user.save();
+  return { allowed: true, model: result.model };
 }
 
 module.exports = {
   findOrCreateUser,
   updateUser,
   addDailyTasks,
-  incrementAIUsage
+  getAIModel
 };
