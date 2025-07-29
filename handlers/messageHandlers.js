@@ -3,7 +3,7 @@ const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/
 const getSmartResponse = require('../utils/getSmartResponse');
 const { checkAccessLevel, incrementAIUsage, canUseAI } = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
-const generateWeeklyChecklist = require('../utils/generateWeeklyChecklist');
+const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
 
 module.exports = function (bot) {
   bot.on('message', async (msg) => {
