@@ -65,9 +65,9 @@ Use the checklist manually or subscribe to unlock smart features.`);
 You can only use AI to generate checklists with the Basic plan.`, { parse_mode: 'Markdown' });
     }
 
-    if (usingGeneralSmartQuery && !(await canUseAI(user))) {
-      return bot.sendMessage(chatId, `⏳ You've reached your daily/weekly AI usage limit.
-Please try again later or upgrade your plan.`);
+    const accessCheck = await getAIModelAndAccess(user);
+    if (usingGeneralSmartQuery && !accessCheck.allowed) {
+      return bot.sendMessage(chatId, `🔒 ${accessCheck.reason}`);
     }
 
     if (usingGeneralSmartQuery && ['trial', 'premium'].includes(accessLevel)) {
