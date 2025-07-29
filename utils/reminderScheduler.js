@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const User = require('../models/User');
+const User = require('../models/user');
 
 function startDailyReminders(bot) {
   // Run every day at 6 PM Nigeria time
