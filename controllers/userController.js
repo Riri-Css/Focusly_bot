@@ -27,12 +27,18 @@ async function updateUser(telegramId, data) {
 // Add daily checklist tasks (expects comma-separated string input)
 async function addDailyTasks(user, taskInput) {
   const today = new Date().toISOString().split('T')[0];
-
+  let tasks = [];
   // Clean and split task input string into array
-  const tasks = taskInput
-    .split(',')
-    .map(task => task.trim())
-    .filter(task => task.length > 0); // Remove empty entries
+  if (typeof taskInput === 'string') {
+    tasks = taskInput
+      .split(',')
+      .map(task => task.trim())
+      .filter(task => task.length > 0); // Remove empty entries
+  } else if (Array.isArray(taskInput)) {
+    tasks = taskInput.map(task => String(task).trim()).filter(task => task.length > 0);
+  } else {
+    throw new Error('Invalid task input format. Expected a string or an array.');
+  }
 
   if (!user.history) user.history = [];
 
