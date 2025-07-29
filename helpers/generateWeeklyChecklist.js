@@ -1,59 +1,73 @@
-const OpenAI = require('openai');
-require('dotenv').config();
+const getSmartResponse = require('./getSmartResponse');
+const { User } = require('../models/user');
 
-let openai;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
+const fallbackWeeklyChecklist = [
+  "Set clear weekly goals related to your focus",
+  "Pick one priority per day",
+  "Leave buffer time to review progress",
+  "Midweek reflection & reset if needed",
+  "Schedule focused deep work hours",
+  "Avoid distractions – set phone boundaries",
+  "Celebrate wins and evaluate what worked"
+];
 
-async function generateWeeklyChecklist(focus) {
-  if (!openai) {
-    // 🔙 Fallback if OpenAI is unavailable
-    return [
-      `Work on something related to: ${focus}`,
-      `Read or research more on ${focus}`,
-      `Practice a task that improves your skills in ${focus}`,
-      `Review your progress on ${focus}`,
-      `Seek feedback or mentorship related to ${focus}`,
-      `Make a small but bold improvement regarding ${focus}`,
-      `Reflect on why ${focus} matters to you`
-    ];
-  }
+async function generateWeeklyChecklist(user) {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
 
-  try {
-    const prompt = `
-You're Focusly AI. A user has committed to this focus: "${focus}".
+  // Restrict access for expired or unsubscribed
+  if (user.subscriptionStatus === 'expired') {
+    return fallbackWeeklyChecklist;
+  }
 
-Generate a 7-day task checklist that will help them make tangible progress toward this focus. Each task should be clear, action-oriented, and short.
+  if (user.subscriptionStatus === 'trial') {
+    const lastUseDate = user.lastAiUseDate?.toISOString().split('T')[0];
+    if (lastUseDate !== today) {
+      user.aiUsageCount = 0;
+    }
 
-Format your output as a bullet-point list with 7 items.
-`;
+    if (user.aiUsageCount >= 5) {
+      return fallbackWeeklyChecklist;
+    }
 
-    const res = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [{ role: 'user', content: prompt }],
-    });
+    user.aiUsageCount += 1;
+    user.lastAiUseDate = now;
+  }
 
-    const checklist = res.choices[0].message.content
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(line => line.replace(/^[-*•\d.]+\s*/, '').trim());
+  if (user.subscriptionPlan === 'basic') {
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const startOfWeek = weekStart.toISOString().split('T')[0];
 
-    return checklist.slice(0, 7); // Always return 7 items
-  } catch (error) {
-    console.error('Checklist generation error:', error.message);
+    const lastUseDate = user.lastAiUseDate?.toISOString().split('T')[0];
+    if (!user.lastAiUseDate || lastUseDate < startOfWeek) {
+      user.aiUsageCount = 0;
+    }
 
-    // Return fallback checklist if API fails
-    return [
-      `Work on something related to: ${focus}`,
-      `Read or research more on ${focus}`,
-      `Practice a task that improves your skills in ${focus}`,
-      `Review your progress on ${focus}`,
-      `Seek feedback or mentorship related to ${focus}`,
-      `Make a small but bold improvement regarding ${focus}`,
-      `Reflect on why ${focus} matters to you`
-    ];
-  }
+    if (user.aiUsageCount >= 10) {
+      return fallbackWeeklyChecklist;
+    }
+
+    user.aiUsageCount += 1;
+    user.lastAiUseDate = now;
+  }
+
+  if (!user.isSubscribed && user.subscriptionStatus !== 'trial') {
+    return fallbackWeeklyChecklist;
+  }
+
+  try {
+    const prompt = `Create a 7-day weekly plan to help someone stay focused on their goal: "${user.focus}". Keep each day short and focused.`;
+    const aiChecklist = await getSmartResponse(prompt, 'weekly');
+
+    // Save usage info
+    await user.save();
+
+    return aiChecklist || fallbackWeeklyChecklist;
+  } catch (err) {
+    console.error('🧠 AI weekly checklist error:', err);
+    return fallbackWeeklyChecklist;
+  }
 }
 
 module.exports = generateWeeklyChecklist;

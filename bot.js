@@ -65,11 +65,37 @@ bot.onText(/\/start/, async (msg) => {
   const user = await findOrCreateUser(telegramId);
 
   if (user.stage !== 'completed_onboarding') {
-    await bot.sendMessage(chatId, 'Let’s get you started again...');
-    return handleMessage(bot, msg, true);
-  } else {
-    return bot.sendMessage(chatId, `👋 Welcome back, *${user.name}*!\nYour focus is still *${user.focus}*.\n\nWhat would you like to do today?\n\n1. Plan today’s tasks\n2. View yesterday’s tasks\n3. Change my focus\n\n(Reply with the number)`, { parse_mode: 'Markdown' });
+    if (text === '1') {
+     user.stage = 'awaiting_daily_tasks';
+     await user.save();
+     return bot.sendMessage(chatId, 'Great! What tasks do you want to focus on today? (Separate them with commas)');
+    }
+
+    if (text === '2') {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+     const history = user.history?.find(h => h.date === yesterday);
+     if (history) {
+       return bot.sendMessage(chatId,
+       `📅 Yesterday's Tasks:\n` +
+       history.tasks.map(t => `- ${t}`).join('\n') +
+       `\n\nChecked in: ${history.checkedIn ? '✅' : '❌'}\nFocus: ${history.focus}`);
+     } 
+     else {
+        return bot.sendMessage(chatId, '❌ No tasks found for yesterday.');
+      } 
+    }
+
+     if (text === '3') {
+       user.stage = 'awaiting_focus';
+       await user.save();
+       return bot.sendMessage(chatId, 'What would you like your new focus to be?');
+      }
   }
+  await bot.sendMessage(chatId, 'Let’s get you started again...');
+  return handleMessage(bot, msg, true);
+  //else {
+   // return bot.sendMessage(chatId, `👋 Welcome back, *${user.name}*!\nYour focus is still *${user.focus}*.\n\nWhat would you like to do today?\n\n1. Plan today’s tasks\n2. View yesterday’s tasks\n3. Change my focus\n\n(Reply with the number)`, { parse_mode: 'Markdown' });
+ // }
 });
 
 bot.onText(/\/subscribe/, (msg) => {

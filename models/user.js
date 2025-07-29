@@ -76,7 +76,14 @@ const userSchema = new mongoose.Schema({
   // Career assistant
   strengths: [String],
   interests: [String],
-  recommendedCareers: [String]
+  recommendedCareers: [String],
+
+  // 🧠 AI usage tracking
+  dailyAiUsageCount: {
+    type: Number,
+    default: 0
+  },
+  lastAiUseDate: String
 });
 
 module.exports = mongoose.models.User || mongoose.model('User', userSchema);

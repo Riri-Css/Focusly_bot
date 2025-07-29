@@ -1,31 +1,68 @@
 const User = require('../models/user');
 
-async function checkAccess(userId) {
-  const user = await User.findOne({ telegramId: userId.toString() });
+// Limit configuration
+const DAILY_TRIAL_LIMIT = 5;
+const WEEKLY_BASIC_LIMIT = 10;
+
+// Check if user has AI access
+async function checkAccess(telegramId) {
+  const user = await User.findOne({ telegramId });
   if (!user) return false;
 
   const now = new Date();
 
-  // First-time setup of trial
-  if (!user.trialStarted) {
-    user.trialStarted = now;
-    user.trialEnds = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14-day trial
-    await user.save();
-    return true;
+  // Expiry check
+  if (user.subscriptionStatus === 'expired') return false;
+
+  // Trial check
+  if (user.subscriptionStatus === 'trial') {
+    const trialEnds = new Date(user.trialStartDate);
+    trialEnds.setDate(trialEnds.getDate() + 14);
+
+    if (now > trialEnds) {
+      user.subscriptionStatus = 'expired';
+      await user.save();
+      return false;
+    }
+
+    if (!user.usageDate || new Date(user.usageDate).toISOString().split('T')[0] !== now.toISOString().split('T')[0]) {
+      user.usageCount = 0;
+      user.usageDate = now;
+    }
+
+    return user.usageCount < DAILY_TRIAL_LIMIT;
   }
 
-  // Grant access if subscribed
-  if (user.isSubscribed && user.subscriptionEnds && user.subscriptionEnds > now) {
-    return true;
+  // Subscribed user
+  if (user.subscriptionStatus === 'subscribed') {
+    if (user.subscriptionExpiryDate && now > new Date(user.subscriptionExpiryDate)) {
+      user.subscriptionStatus = 'expired';
+      await user.save();
+      return false;
+    }
+
+    if (user.subscriptionPlan === 'premium') {
+      return true; // unlimited
+    }
+
+    if (user.subscriptionPlan === 'basic') {
+      const usageDate = new Date(user.usageDate || 0);
+      const weekStart = new Date();
+      weekStart.setHours(0, 0, 0, 0);
+      weekStart.setDate(now.getDate() - now.getDay()); // start of current week
+
+      if (usageDate < weekStart) {
+        user.usageCount = 0;
+        user.usageDate = now;
+      }
+
+      return user.usageCount < WEEKLY_BASIC_LIMIT;
+    }
   }
 
-  // Grant access if trial is still active
-  if (user.trialEnds && user.trialEnds > now) {
-    return true;
-  }
-
-  // Otherwise, deny access
   return false;
 }
 
-module.exports = { checkAccess };
+module.exports = {
+  checkAccess
+};

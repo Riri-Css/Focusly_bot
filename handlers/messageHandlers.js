@@ -1,132 +1,112 @@
-
-const { checkAccess } = require('../utils/subscriptionUtils');
+const TelegramBot = require('node-telegram-bot-api');
 const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/userController');
-const { getSmartResponse } = require('../utils/getSmartResponse');
-const { analyzeChecklistIntent } = require('../Ai/intentAnalyzer');
-const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
-const User = require('../models/user');
+const getSmartResponse = require('../utils/getSmartResponse');
+const { checkAccessLevel, incrementAIUsage, canUseAI } = require('../utils/subscriptionUtils');
+const generateChecklist = require('../utils/generateChecklist');
+const generateWeeklyChecklist = require('../utils/generateWeeklyChecklist');
 
 module.exports = function (bot) {
-  bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const telegramId = msg.from.id.toString();
-    const text = msg.text;
-    const today = new Date().toISOString().split('T')[0];
-    const userId = msg.from.id;
+  bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const telegramId = msg.from.id.toString();
+    const text = msg.text.trim();
+    const today = new Date().toISOString().split('T')[0];
+    const userId = msg.from.id;
 
-    let user = await findOrCreateUser(telegramId);
-    if (!user) return bot.sendMessage(chatId, '❌ Something went wrong creating your profile.');
+    let user = await findOrCreateUser(telegramId);
+    if (!user) return bot.sendMessage(chatId, '❌ Something went wrong creating your profile.');
 
-    // Trial + subscription check
-    const hasAccess = await checkAccess(userId);
-    if (!hasAccess) {
-      return bot.sendMessage(chatId, `🔒 Your access has expired.
+    // Run onboarding flow if needed
+    if (text === '/start') {
+      if (!user.name) {
+        user.stage = 'awaiting_name';
+        await user.save();
+        return bot.sendMessage(chatId, "👋 Welcome! What’s your name?");
+      } else {
+        return bot.sendMessage(chatId, "👋 Let’s get you started again...");
+      }
+    }
 
-      Please subscribe to continue using Focusly:`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '💳 Subscribe (Basic ₦1,000)', url: 'https://paystack.shop/pay/gp92ecotgl' }],
-            [{ text: '🚀 Go Premium (₦1,500)', url: 'https://paystack.shop/pay/3h7bjtkh5g' }]
-          ]
-        }
-      });
-    }
+    // Onboarding stages
+    if (user.stage === 'awaiting_name') {
+      user.name = text;
+      user.stage = 'awaiting_focus';
+      await user.save();
+      return bot.sendMessage(chatId, `Nice to meet you, ${user.name}! What’s your current focus?`);
+    }
 
-    // Subscribe command
-    if (/\/subscribe|subscribe/i.test(text)) {
-      const paystackLink = `https://paystack.com/billingsubscription/PLN_udmx2iosxp2jsh0?reference=${telegramId}`;
-      return bot.sendMessage(chatId, `💳 To continue using Focusly, subscribe here:
-      [Click to Subscribe](${paystackLink})`, { parse_mode: 'Markdown' });
-    }
+    if (user.stage === 'awaiting_focus') {
+      user.focus = text;
+      user.stage = 'completed_onboarding';
+      await user.save();
+      return bot.sendMessage(chatId, `Great! Your focus is set to: *${user.focus}*`, { parse_mode: 'Markdown' });
+    }
 
-    // /start onboarding handler
-    if (text === '/start') {
-      if (!user.name) {
-        user.stage = 'awaiting_name';
-        await user.save();
-        return bot.sendMessage(chatId, "👋 Welcome! What’s your name?");
-      } else {
-          return bot.sendMessage(chatId, "👋 Let’s get you started again...");
-        }
-    }
+    // After onboarding
+    if (user.stage !== 'completed_onboarding') {
+      await bot.sendMessage(chatId, 'Let’s get you started again...');
+      return;
+    }
 
-    // Onboarding: name → focus → tasks
-    if (user.stage === 'awaiting_name') {
-      user.name = text;
-      user.stage = 'awaiting_focus';
-      await user.save();
-      return bot.sendMessage(chatId, `Nice to meet you, ${user.name}! What’s your main focus or goal right now?`);
-    }
+    // AI access control
+    const accessLevel = checkAccessLevel(user);
+    const usingChecklistCommand = text.startsWith('/checklist') || text.includes('checklist');
+    const usingGeneralSmartQuery = !['✅', '❌', '1', '2', '3'].includes(text);
 
-    if (user.stage === 'awaiting_focus') {
-      user.focus = text;
-      user.stage = 'awaiting_tasks';
-      await user.save();
-      return bot.sendMessage(chatId, `Awesome! Your focus is now set to: *${user.focus}*
+    if (usingGeneralSmartQuery && accessLevel === 'none') {
+      return bot.sendMessage(chatId, `🔒 You need to subscribe to use Focusly AI features.
 
-      Now tell me 1–3 tasks you’ll do today to support this. Separate them with commas.`, { parse_mode: 'Markdown' });
-    }
+Use the checklist manually or subscribe to unlock smart features.`);
+    }
 
-    if (user.stage === 'awaiting_tasks') {
-      const tasks = text.split(',').map(t => t.trim()).filter(t => t.length > 0);
-      if (tasks.length === 0) {
-        return bot.sendMessage(chatId, 'Please send at least one task, separated by commas.');
-      }
-      await addDailyTasks(user, tasks);
-      user.stage = 'completed_onboarding';
-      await user.save();
-      return bot.sendMessage(chatId, `✅ Got it! You’ve planned ${tasks.length} task(s) for today. Let’s go! 💪`);
-    }
+    if (usingGeneralSmartQuery && accessLevel === 'basic') {
+      return bot.sendMessage(chatId, `🚫 Smart AI replies are only available for *Premium* users.
 
-    // Check if message is a checklist
-    const checklistAnalysis = await analyzeChecklistIntent(text);
-    if (checklistAnalysis?.isChecklist) {
-      user.manualChecklist = checklistAnalysis.items;
-      await user.save();
-      await bot.sendMessage(chatId, `✅ Got your checklist:
-        ${checklistAnalysis.items.map((item, i) => `${i + 1}. ${item}`).join('')}
-      `);
-      return;
-    }
+You can only use AI to generate checklists with the Basic plan.`, { parse_mode: 'Markdown' });
+    }
 
-    // Check-in logic
-    if (user.stage === 'completed_onboarding' && (text === '✅' || text === '❌')) {
-      if (user.lastCheckInDate === today) {
-        return bot.sendMessage(chatId, '⏳ You’ve already checked in today! Come back tomorrow.');
-      }
+    if (usingGeneralSmartQuery && !(await canUseAI(user))) {
+      return bot.sendMessage(chatId, `⏳ You've reached your daily/weekly AI usage limit.
+Please try again later or upgrade your plan.`);
+    }
 
-      user.lastCheckInDate = today;
-      user.hasCheckedInToday = true;
+    if (usingGeneralSmartQuery && ['trial', 'premium'].includes(accessLevel)) {
+      await incrementAIUsage(user);
+      const smartReply = await getSmartResponse(text, user);
+      return bot.sendMessage(chatId, smartReply || "🤖 Sorry, I couldn’t think of a smart reply right now.");
+    }
 
-      if (text === '✅') {
-        user.streak += 1;
-        user.stage = 'awaiting_positive_reflection';
-        await user.save();
-        await bot.sendMessage(chatId, '💬 What helped you stay focused today?');
-        return;
-      } else {
-        user.streak = 0;
-        user.stage = 'awaiting_negative_reflection';
-        await user.save();
-        await bot.sendMessage(chatId, '💡 What got in the way today? Let’s be honest.');
-        return;
-      }
-    }
+    // Simple menu logic
+    if (text === '1') {
+      return bot.sendMessage(chatId, "📝 What are your tasks for today? Separate them with commas.");
+    }
+    if (text === '2') {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yyyymmdd = yesterday.toISOString().split('T')[0];
+      const yesterdayEntry = user.history?.find(h => h.date === yyyymmdd);
+      if (yesterdayEntry) {
+        return bot.sendMessage(chatId, `📆 *Yesterday’s Tasks:*
+${yesterdayEntry.tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}`, { parse_mode: 'Markdown' });
+      } else {
+        return bot.sendMessage(chatId, `😕 I couldn’t find any tasks from yesterday.`);
+      }
+    }
+    if (text === '3') {
+      user.stage = 'awaiting_focus';
+      await user.save();
+      return bot.sendMessage(chatId, `What’s your new focus?`);
+    }
 
-    // Reflection response
-    if (user.stage === 'awaiting_positive_reflection' || user.stage === 'awaiting_negative_reflection') {
-      user.stage = 'completed_onboarding';
-      await user.save();
-      return bot.sendMessage(chatId, 'Thanks for reflecting. Let’s keep going 🚀');
-    }
+    // Handle checklist input
+    if (text.includes(',') && user.stage === 'completed_onboarding') {
+      const tasks = text.split(',').map(t => t.trim()).filter(Boolean);
+      await addDailyTasks(user, tasks);
+      return bot.sendMessage(chatId, `✅ Got it! I’ve saved your tasks:
+${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}`);
+    }
 
-    // Default fallback (OpenAI smart response if possible)
-    try {
-      const aiReply = await getSmartResponse(text, user);
-      return bot.sendMessage(chatId, aiReply);
-    } catch (err) {
-      console.error("Smart response error:", err.message);
-      return bot.sendMessage(chatId, "Sorry, I couldn’t think of a smart reply right now.");
-    }
-  });
+    // Fallback reply
+    return bot.sendMessage(chatId, "🤖 I don’t understand that. Choose an option or ask something meaningful.");
+  });
 };
