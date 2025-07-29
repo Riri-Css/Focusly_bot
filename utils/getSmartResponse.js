@@ -1,12 +1,11 @@
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
 const { incrementUsage, hasAccessToAI, isChecklistRequest } = require('../utils/subscriptionUtils');
 const { User } = require('../models/user');
 require('dotenv').config();
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
-const openai = new OpenAIApi(configuration);
 
 async function getSmartResponse(user, input, isChecklist = false) {
   // Check if user has access to AI
@@ -31,7 +30,7 @@ async function getSmartResponse(user, input, isChecklist = false) {
     : `You’re Focusly’s AI coach. Be insightful, motivational, and practical. Help users with their goals, mindset, routines, or obstacles.`;
 
   try {
-    const response = await openai.createChatCompletion({
+    const response = await openai.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -40,9 +39,9 @@ async function getSmartResponse(user, input, isChecklist = false) {
     });
 
     await incrementUsage(user.telegramId, isChecklist);
-    return response.data.choices[0].message.content.trim();
+    return response.choices[0].message.content.trim();
   } catch (error) {
-    console.error('❌ OpenAI error:', error.response?.data || error.message);
+    console.error('❌ OpenAI error:', error?.response?.data || error.message);
     return "⚠️ I ran into an issue generating your response. Please try again later.";
   }
 }
