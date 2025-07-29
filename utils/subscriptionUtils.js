@@ -1,12 +1,10 @@
 const { User } = require('../models/user');
 
-// Check if user has AI access and return their model
+// ✅ Determine AI model and access
 async function getAIModelAndAccess(user) {
   const today = new Date().toISOString().split('T')[0];
 
-  // Handle trial
   if (user.subscriptionStatus === 'trial') {
-    // Reset daily usage if date changed
     if (user.lastUsageDate !== today) {
       user.usageCount = 0;
       user.lastUsageDate = today;
@@ -20,7 +18,6 @@ async function getAIModelAndAccess(user) {
     }
   }
 
-  // Handle subscribed users
   if (user.subscriptionStatus === 'subscribed') {
     if (user.subscriptionPlan === 'premium') {
       return { allowed: true, model: 'gpt-4o' };
@@ -42,19 +39,44 @@ async function getAIModelAndAccess(user) {
     }
   }
 
-  // Handle expired
   return { allowed: false, reason: 'Access expired. Please subscribe to continue using AI.' };
 }
 
+// ✅ Optional helper if needed elsewhere
+async function hasAccessToAI(user, isChecklist = false) {
+  const result = await getAIModelAndAccess(user);
+  if (!result.allowed) return false;
+  if (user.subscriptionPlan === 'basic' && !isChecklist) return false;
+  return true;
+}
+
+// ✅ Increment usage
+async function incrementUsage(telegramId) {
+  const user = await User.findOne({ telegramId });
+  if (!user) return;
+
+  user.usageCount = (user.usageCount || 0) + 1;
+  user.lastUsageDate = new Date().toISOString().split('T')[0];
+  await user.save();
+}
+
+// ✅ Used for access tier messages
+function checkAccessLevel(user) {
+  if (user.subscriptionStatus === 'trial') return 'trial';
+  if (user.subscriptionStatus === 'subscribed') return user.subscriptionPlan || 'basic';
+  return 'none';
+}
+
+// 🗓 Helper: Week starts on Monday
 function getStartOfWeek() {
   const now = new Date();
-  const day = now.getDay(); // Sunday is 0, Monday is 1...
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday as first day
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
   return new Date(now.setDate(diff));
 }
 
-module.exports = { 
-  getAIModelAndAccess, 
+module.exports = {
+  getAIModelAndAccess,
   hasAccessToAI,
   incrementUsage,
   checkAccessLevel,
