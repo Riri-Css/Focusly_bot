@@ -11,6 +11,7 @@ async function findOrCreateUser(telegramId) {
       hasCheckedInToday: false,
       trialStartDate: new Date(),
       subscriptionStatus: 'trial',
+      stage: 'awaiting_name',
     });
 
     await user.save();
