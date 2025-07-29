@@ -4,6 +4,7 @@ const getSmartResponse = require('../utils/getSmartResponse');
 const { checkAccessLevel, incrementAIUsage, hasAccessToAI, canUseAI } = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
+const { getAIModelAndAccess } = require('../utils/subscriptionUtils');
 
 module.exports = function (bot) {
   bot.on('message', async (msg) => {
