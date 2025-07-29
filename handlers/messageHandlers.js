@@ -1,7 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/userController');
 const getSmartResponse = require('../utils/getSmartResponse');
-const { checkAccessLevel, incrementAIUsage, canUseAI } = require('../utils/subscriptionUtils');
+const { checkAccessLevel, incrementAIUsage, hasAccessToAI, canUseAI } = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
 

@@ -53,4 +53,9 @@ function getStartOfWeek() {
   return new Date(now.setDate(diff));
 }
 
-module.exports = { getAIModelAndAccess };
+module.exports = { 
+  getAIModelAndAccess, 
+  hasAccessToAI,
+  incrementUsage,
+  checkAccessLevel,
+};
