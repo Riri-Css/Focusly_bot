@@ -4,11 +4,11 @@ const mongoose = require('mongoose');
 const express = require('express');
 const bodyParser = require('body-parser');
 
-const messageHandlers = require('../handlers/messageHandlers');
-const { startDailyJobs } = require('../utils/cronJobs');
-const { scheduleCustomReminders } = require('../utils/reminderScheduler');
-const subscriptionRoutes = require('../handlers/subscriptionHandlers');
-const webhookHandler = require('../utils/webhook');
+const messageHandlers = require('./handlers/messageHandlers');
+const { startDailyJobs } = require('./utils/cronJobs');
+const { scheduleCustomReminders } = require('./utils/reminderScheduler');
+const subscriptionRoutes = require('./handlers/subscriptionHandlers');
+const webhookHandler = require('./utils/webhook');
 
 const app = express();
 app.use(bodyParser.json());
