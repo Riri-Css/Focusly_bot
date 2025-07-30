@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyAndActivateSubscription } = require('./utils/subscriptionHandlers');
+const { verifyAndActivateSubscription } = require('../handlers/subscriptionHandlers');
 
 // Paystack webhook endpoint
 router.post('/paystackwebhook', express.json({ verify: verifyPaystackSignature }), async (req, res) => {
