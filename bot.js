@@ -14,7 +14,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Setup Telegram Bot
-const bot = new TelegramBot(process.env.BOT_TOKEN);
+const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 app.post('/', (req, res) => {
 
   bot.processUpdate(req.body);
