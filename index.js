@@ -8,7 +8,7 @@ const paystackWebhook = require('./routes/paystackWebhook');
 
 const app = express();
 
-const bot = new TelegramBot(process.env.BOT_TOKEN), 
+//const bot = new TelegramBot(process.env.BOT_TOKEN), 
 bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
 
 // Middleware
