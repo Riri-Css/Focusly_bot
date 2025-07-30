@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const User = require('../models/User');
+const User = require('../models/user');
 
 router.post('/', async (req, res) => {
   const secret = process.env.PAYSTACK_SECRET_KEY;
