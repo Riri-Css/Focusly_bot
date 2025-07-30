@@ -37,5 +37,6 @@ app.listen(PORT, async () => {
 
 // Telegram message handler
 bot.on('message', (msg) => {
+  console.log("User sent a message:", msg.text);
   messageHandlers(bot, msg);
 });
