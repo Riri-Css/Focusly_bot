@@ -1,23 +1,32 @@
-const OpenAIApi = require('openai');
-//require('dotenv').config();
+const OpenAI = require('./utils/openai');
 
-const openai = new OpenAIApi({
+// Make sure you set OPENAI_API_KEY in Render environment
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-//const openai = new OpenAIApi(configuration);
 
-async function getSmartResponse(prompt) {
-  const completion = await openai.createChatCompletion({
-    model: 'gpt-3.5-turbo',
-    messages: [
-      { role: 'system', content: 'You are a friendly productivity coach who helps users stay focused, motivated, and consistent with their goals.' },
-      { role: 'user', content: prompt }
-    ],
-  });
+// General-purpose smart response from AI
+async function getSmartResponse(prompt, model = 'gpt-4o') {
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a friendly but disciplined productivity coach that helps users stay focused, consistent, and accountable. You provide actionable, short, and motivating responses.',
+        },
+        { role: 'user', content: prompt },
+      ],
+    });
 
-  return completion.data.choices[0].message.content.trim();
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('OpenAI error:', error);
+    return "Sorry, I'm currently unable to respond. Please try again later.";
+  }
 }
 
 module.exports = {
-  getSmartResponse
+  getSmartResponse,
 };

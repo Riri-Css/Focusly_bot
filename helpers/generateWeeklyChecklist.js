@@ -1,73 +1,49 @@
-const getSmartResponse = require('../utils/getSmartResponse');
-const { User } = require('../models/user');
+const { getSmartResponse } = require('../utils/openai');
+const {
+  isAIAllowed,
+  trackAIUsage,
+  getAllowedModelForUser,
+} = require('../utils/subscriptionUtils');
 
-const fallbackWeeklyChecklist = [
-  "Set clear weekly goals related to your focus",
-  "Pick one priority per day",
-  "Leave buffer time to review progress",
-  "Midweek reflection & reset if needed",
-  "Schedule focused deep work hours",
-  "Avoid distractions – set phone boundaries",
-  "Celebrate wins and evaluate what worked"
-];
+async function generateWeeklyChecklist(user, goal, tasksLastWeek = []) {
+  try {
+    const aiAllowed = isAIAllowed(user);
 
-async function generateWeeklyChecklist(user) {
-  const now = new Date();
-  const today = now.toISOString().split('T')[0];
+    if (!aiAllowed) {
+      return [
+        "Since you're on the free plan, here’s your manual weekly planning tip:",
+        `• Reflect on last week's progress.`,
+        `• Set 3–5 priorities for this week aligned with your goal: "${goal}"`,
+        "• Upgrade to Basic or Premium for AI-powered planning."
+      ];
+    }
 
-  // Restrict access for expired or unsubscribed
-  if (user.subscriptionStatus === 'expired') {
-    return fallbackWeeklyChecklist;
-  }
+    const model = getAllowedModelForUser(user);
 
-  if (user.subscriptionStatus === 'trial') {
-    const lastUseDate = user.lastAiUseDate?.toISOString().split('T')[0];
-    if (lastUseDate !== today) {
-      user.aiUsageCount = 0;
-    }
+    const prompt = `
+You are Focusly, a weekly planning assistant powered by AI.
 
-    if (user.aiUsageCount >= 5) {
-      return fallbackWeeklyChecklist;
-    }
+The user's long-term goal is: "${goal}"
+Here are last week's tasks: ${tasksLastWeek.length ? tasksLastWeek.join(', ') : 'None'}
 
-    user.aiUsageCount += 1;
-    user.lastAiUseDate = now;
-  }
+Generate a 5-point weekly checklist with short, clear, motivating tasks. Avoid being too vague.`;
 
-  if (user.subscriptionPlan === 'basic') {
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const startOfWeek = weekStart.toISOString().split('T')[0];
+    const aiResponse = await getSmartResponse(prompt, model);
 
-    const lastUseDate = user.lastAiUseDate?.toISOString().split('T')[0];
-    if (!user.lastAiUseDate || lastUseDate < startOfWeek) {
-      user.aiUsageCount = 0;
-    }
+    if (!aiResponse) {
+      return ["AI failed to generate your weekly checklist. Try again later."];
+    }
 
-    if (user.aiUsageCount >= 10) {
-      return fallbackWeeklyChecklist;
-    }
+    await trackAIUsage(user);
 
-    user.aiUsageCount += 1;
-    user.lastAiUseDate = now;
-  }
-
-  if (!user.isSubscribed && user.subscriptionStatus !== 'trial') {
-    return fallbackWeeklyChecklist;
-  }
-
-  try {
-    const prompt = `Create a 7-day weekly plan to help someone stay focused on their goal: "${user.focus}". Keep each day short and focused.`;
-    const aiChecklist = await getSmartResponse(user, prompt, TextTrackCue);
-
-    // Save usage info
-    await user.save();
-
-    return aiChecklist || fallbackWeeklyChecklist;
-  } catch (err) {
-    console.error('🧠 AI weekly checklist error:', err);
-    return fallbackWeeklyChecklist;
-  }
+    return aiResponse
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && /^[•\-\d]/.test(line));
+  } catch (error) {
+    console.error('Weekly checklist generation error:', error);
+    return ["Something went wrong while generating your weekly checklist."];
+  }
 }
 
 module.exports = generateWeeklyChecklist;

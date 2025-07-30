@@ -1,91 +1,61 @@
+// utils/subscriptionUtils.js
 
+const moment = require('moment');
 
-// ✅ Determine AI model and access
-const User = require('../models/user');
-
-async function getAIModelAndAccess(user) {
-  const today = new Date().toISOString().split('T')[0];
-
-  if (user.subscriptionStatus === 'trial') {
-    if (user.lastUsageDate !== today) {
-      user.usageCount = 0;
-      user.lastUsageDate = today;
-      await user.save();
-    }
-
-    if (user.usageCount < 5) {
-      return { allowed: true, model: 'gpt-4o' };
-    } else {
-      return { allowed: false, reason: 'Trial limit reached for today. Upgrade for unlimited access.' };
-    }
-  }
-
-  if (user.subscriptionStatus === 'subscribed') {
-    if (user.subscriptionPlan === 'premium') {
-      return { allowed: true, model: 'gpt-4o' };
-    }
-
-    if (user.subscriptionPlan === 'basic') {
-      const startOfWeek = getStartOfWeek();
-      if (!user.lastUsageDate || new Date(user.lastUsageDate) < startOfWeek) {
-        user.usageCount = 0;
-        user.lastUsageDate = today;
-        await user.save();
-      }
-
-      if (user.usageCount < 10) {
-        return { allowed: true, model: 'gpt-3.5-turbo' };
-      } else {
-        return { allowed: false, reason: 'Weekly usage limit reached. Upgrade for unlimited access.' };
-      }
-    }
-  }
-
-  return { allowed: false, reason: 'Access expired. Please subscribe to continue using AI.' };
+function isTrialExpired(user) {
+  if (!user.trialStartDate) return true;
+  const daysSinceTrial = moment().diff(moment(user.trialStartDate), 'days');
+  return daysSinceTrial > 13; // 14-day trial (0-indexed)
 }
 
-// ✅ Optional helper if needed elsewhere
-async function hasAccessToAI(user, isChecklist = false) {
-  const result = await getAIModelAndAccess(user);
-  if (!result.allowed) return false;
-  if (user.subscriptionPlan === 'basic' && !isChecklist) return false;
-  return true;
+function hasActiveSubscription(user) {
+  if (!user.subscription || !user.subscription.status) return false;
+  return user.subscription.status === 'active' && (!user.subscription.expiresAt || moment().isBefore(user.subscription.expiresAt));
 }
 
-// ✅ Increment usage
-//try {
-  async function incrementUsage(telegramId) {
-  const user = await User.findOne({ telegramId });
-  if (!user) return;
-
-  user.usageCount = (user.usageCount || 0) + 1;
-  user.lastUsageDate = new Date().toISOString().split('T')[0];
-  await user.save();
-  }
-  //catch (err) {
-    //console.error('Error incrementing usage:', err.message);
-    //return bot.sendMessage(ChatId, "Something went wrong while processing your message. Please try again later.");
-  //}
-//}
-
-// ✅ Used for access tier messages
-function checkAccessLevel(user) {
-  if (user.subscriptionStatus === 'trial') return 'trial';
-  if (user.subscriptionStatus === 'subscribed') return user.subscriptionPlan || 'basic';
-  return 'none';
+function getUserPlan(user) {
+  if (hasActiveSubscription(user)) {
+    return user.subscription.plan; // 'basic' or 'premium'
+  }
+  return isTrialExpired(user) ? 'none' : 'trial';
 }
 
-// 🗓 Helper: Week starts on Monday
-function getStartOfWeek() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(now.setDate(diff));
+function canAccessAI(user, feature = 'general') {
+  const plan = getUserPlan(user);
+  if (plan === 'premium') return true;
+  if (plan === 'basic') {
+    if (feature === 'checklist') return (user.weeklyAIUses || 0) < 10;
+    return false; // no general AI
+  }
+  if (plan === 'trial') {
+    return (user.dailyAIUses || 0) < 5;
+  }
+  return false;
+}
+
+function incrementAIUsage(user, feature = 'general') {
+  const plan = getUserPlan(user);
+  if (plan === 'basic' && feature === 'checklist') {
+    user.weeklyAIUses = (user.weeklyAIUses || 0) + 1;
+  } else if (plan === 'trial') {
+    user.dailyAIUses = (user.dailyAIUses || 0) + 1;
+  }
+  return user.save();
+}
+
+function getAIModel(user) {
+  const plan = getUserPlan(user);
+  if (plan === 'premium') return 'gpt-4o';
+  if (plan === 'basic') return 'gpt-3.5-turbo';
+  if (plan === 'trial') return 'gpt-4o';
+  return null;
 }
 
 module.exports = {
-  getAIModelAndAccess,
-  hasAccessToAI,
-  incrementUsage,
-  checkAccessLevel,
+  isTrialExpired,
+  hasActiveSubscription,
+  getUserPlan,
+  canAccessAI,
+  incrementAIUsage,
+  getAIModel
 };

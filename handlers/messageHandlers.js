@@ -1,101 +1,115 @@
-const { findOrCreateUser, updateUser, addDailyTasks } = require('../controllers/userController');
-const getSmartResponse = require('../utils/getSmartResponse');
-const { checkAccessLevel, incrementUsage, getAIModelAndAccess } = require('../utils/subscriptionUtils');
+const { getOrCreateUser, updateUserField, incrementStreak, resetStreak, getTodayTasks, markTaskStatus, checkTaskStatus, incrementAIUsage, getAIUsage, saveDailyTasks } = require('../controllers/userController');
+const { checkSubscriptionStatus, getRemainingAIQuota, getModelForUser } = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
-const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
+const getSmartResponse = require('../utils/getSmartResponse');
 
 async function handleMessage(bot, msg) {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
+  const telegramId = msg.from.id;
 
-  if (text === 'ping') {
-    return bot.sendMessage(chatId, 'pong, Bot is alive');
+  if (!text) return;
+
+  const user = await getOrCreateUser(telegramId);
+  if (!user) {
+    await bot.sendMessage(chatId, "Something went wrong. Please try again.");
+    return;
   }
-  const telegramId = msg.from.id.toString();
-  const today = new Date().toISOString().split('T')[0];
 
-    let user = await findOrCreateUser(telegramId);
-    if (!user) return bot.sendMessage(chatId, '❌ Something went wrong creating your profile.');
+  const lowerText = text.toLowerCase();
 
-    if (!text) return;
+  // === 1. ONBOARDING ===
+  if (!user.goal) {
+    await updateUserField(telegramId, 'goal', text);
+    await bot.sendMessage(chatId, `Nice! So your focus is: *${text}*. Let's stay consistent.`, { parse_mode: 'Markdown' });
 
-    // /start command
-    if (text === '/start') {
-      if (!user.name) {
-        user.stage = 'awaiting_name';
-        await user.save();
-        return bot.sendMessage(chatId, "👋 Welcome! What’s your name?");
-      } else {
-        return bot.sendMessage(chatId, "👋 Let’s get you started again...");
-      }
-    }
+    const defaultTasks = [`Work on ${text}`, `Avoid distractions`, `Review progress`, `Learn something new`, `Stay focused`];
+    await saveDailyTasks(telegramId, defaultTasks);
 
-    // Onboarding flow
-    if (user.stage === 'awaiting_name') {
-      user.name = text;
-      user.stage = 'awaiting_focus';
-      await user.save();
-      return bot.sendMessage(chatId, `Nice to meet you, ${user.name}! What’s your current focus?`);
-    }
+    await bot.sendMessage(chatId, "Here’s a smart daily checklist for today:");
+    for (const task of defaultTasks) {
+      await bot.sendMessage(chatId, `▫️ ${task}`);
+    }
 
-    if (user.stage === 'awaiting_focus') {
-      user.focus = text;
-      user.stage = 'completed_onboarding';
-      await user.save();
-      return bot.sendMessage(chatId, `Great! Your focus is set to: *${user.focus}*`, { parse_mode: 'Markdown' });
-    }
+    return;
+  }
 
-    if (user.stage !== 'completed_onboarding') {
-      return bot.sendMessage(chatId, 'Let’s get you started again...');
-    }
+  // === 2. CHECK-IN ===
+  if (lowerText === '✅' || lowerText === '❌') {
+    const status = lowerText === '✅' ? 'completed' : 'skipped';
+    await markTaskStatus(telegramId, status);
 
-    // ✅ AI access logic
-    const isSmartQuery = !['✅', '❌', '1', '2', '3'].includes(text);
-    if (isSmartQuery) {
-      const { allowed, reason } = await getAIModelAndAccess(user);
-      if (!allowed) return bot.sendMessage(chatId, `🔒 ${reason}`);
+    if (status === 'completed') {
+      await incrementStreak(telegramId);
+      await bot.sendMessage(chatId, "🔥 Great job staying focused today! +1 streak!");
+    } else {
+      await resetStreak(telegramId);
+      await bot.sendMessage(chatId, "😕 You skipped your tasks today. Streak reset. Let’s bounce back tomorrow.");
+    }
 
-      if (user.subscriptionPlan === 'basic' && !text.toLowerCase().includes('checklist')) {
-        return bot.sendMessage(chatId, `🚫 Smart AI replies are only available for *Premium* users.\n\nYou can only use AI to generate checklists with the Basic plan.`, { parse_mode: 'Markdown' });
-      }
+    return;
+  }
 
-      await incrementUsage(user.telegramId);
-      const smartReply = await getSmartResponse(user, text);
-      return bot.sendMessage(chatId, smartReply || "🤖 I couldn’t think of a smart reply.");
-    }
+  // === 3. USER ASKS FOR CHECKLIST ===
+  if (lowerText.includes('checklist')) {
+    try {
+      const subscription = await checkSubscriptionStatus(telegramId);
+      if (subscription.status === 'none') {
+        await bot.sendMessage(chatId, "🚫 You need a subscription to use the AI checklist. Start your free trial or subscribe to unlock.");
+        return;
+      }
 
-    // Menu options
-    if (text === '1') {
-      return bot.sendMessage(chatId, "📝 What are your tasks for today? Separate them with commas.");
-    }
-    if (text === '2') {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yyyymmdd = yesterday.toISOString().split('T')[0];
-      const yesterdayEntry = user.history?.find(h => h.date === yyyymmdd);
-      if (yesterdayEntry) {
-        return bot.sendMessage(chatId, `📆 *Yesterday’s Tasks:*\n${yesterdayEntry.tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}`, { parse_mode: 'Markdown' });
-      } else {
-        return bot.sendMessage(chatId, `😕 I couldn’t find any tasks from yesterday.`);
-      }
-    }
-    if (text === '3') {
-      user.stage = 'awaiting_focus';
-      await user.save();
-      return bot.sendMessage(chatId, `What’s your new focus?`);
-    }
+      const quotaLeft = await getRemainingAIQuota(telegramId);
+      if (quotaLeft <= 0) {
+        await bot.sendMessage(chatId, "⚠️ You've reached your AI usage limit. Upgrade to Premium for unlimited access.");
+        return;
+      }
 
-    if (text.includes(',') && user.stage === 'completed_onboarding') {
-      const tasks = text.split(',').map(t => t.trim()).filter(Boolean);
-      await addDailyTasks(user, tasks);
-      return bot.sendMessage(chatId, `✅ Got it! I’ve saved your tasks:\n${tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}`);
-    }
+      const model = getModelForUser(subscription.plan);
+      const checklist = await generateChecklist(user.goal, model);
 
-    return bot.sendMessage(chatId, "🤖 I don’t understand that. Choose an option or ask something meaningful.");
-};
+      await incrementAIUsage(telegramId);
+      await saveDailyTasks(telegramId, checklist);
 
-module.exports = function (bot) {
-  bot.on('message', async (msg) => {
-    await handleMessage(bot, msg);
-  });
-};
+      await bot.sendMessage(chatId, "📋 Here’s your smart checklist:");
+      for (const item of checklist) {
+        await bot.sendMessage(chatId, `▫️ ${item}`);
+      }
+    } catch (error) {
+      console.error("Error generating checklist:", error);
+      await bot.sendMessage(chatId, "⚠️ Couldn't generate checklist right now. Try again later.");
+    }
+
+    return;
+  }
+
+  // === 4. GENERAL AI MESSAGES ===
+  try {
+    const subscription = await checkSubscriptionStatus(telegramId);
+    if (subscription.status === 'none') {
+      await bot.sendMessage(chatId, "👋 You can chat with me freely after starting your 14-day free trial.");
+      return;
+    }
+
+    const quotaLeft = await getRemainingAIQuota(telegramId);
+    if (quotaLeft <= 0) {
+      await bot.sendMessage(chatId, "⛔ You've used up your AI access for now. Consider upgrading to Premium.");
+      return;
+    }
+
+    const model = getModelForUser(subscription.plan);
+    const reply = await getSmartResponse(user, text, model);
+
+    if (reply) {
+      await bot.sendMessage(chatId, reply);
+      await incrementAIUsage(telegramId);
+    } else {
+      await bot.sendMessage(chatId, "🤔 I’m not sure how to respond. Try asking something else!");
+    }
+  } catch (err) {
+    console.error("Error in general AI chat:", err);
+    await bot.sendMessage(chatId, "⚠️ Something went wrong. Please try again later.");
+  }
+}
+
+module.exports = { handleMessage };

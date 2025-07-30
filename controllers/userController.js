@@ -1,68 +1,146 @@
 const User = require('../models/user');
-const { getAIModelAndAccess } = require('../utils/subscriptionUtils');
+//const { defaultTasks } = require('../constants');
 
-// Find user by Telegram ID or create a new one
-async function findOrCreateUser(telegramId) {
-  let user = await User.findOne({ telegramId });
-
-  if (!user) {
-    user = new User({
-      telegramId,
-      streak: 0,
-      hasCheckedInToday: false,
-      trialStartDate: new Date(),
-      subscriptionStatus: 'trial',
-      usageCount: 0,
-    });
-    await user.save();
+async function getOrCreateUser(telegramId) {
+  try {
+    let user = await User.findOne({ telegramId });
+    if (!user) {
+      user = await User.create({ telegramId });
+    }
+    return user;
+  } catch (error) {
+    console.error('Error in getOrCreateUser:', error);
+    return null;
   }
-
-  return user;
 }
 
-// Update user data
-async function updateUser(telegramId, data) {
-  return await User.findOneAndUpdate({ telegramId }, data, { new: true });
-}
-
-// Add daily checklist tasks
-async function addDailyTasks(user, tasks) {
-  const today = new Date().toISOString().split('T')[0];
-
-  if (!user.history) user.history = [];
-
-  user.history.push({
-    date: today,
-    focus: user.focus,
-    tasks,
-    checkedIn: false
-  });
-
-  user.dailyChecklist = tasks;
-  user.hasCheckedInToday = false;
-  user.lastCheckInDate = today;
-
-  await user.save();
-}
-
-// Get AI model if user has access
-async function getAIModel(user) {
-  const result = await getAIModelAndAccess(user);
-  if (!result.allowed) return { allowed: false, reason: result.reason };
-
-  // Increase usage count only if under trial or basic
-  if (user.subscriptionStatus === 'trial' || user.subscriptionPlan === 'basic') {
-    user.usageCount += 1;
-    user.lastUsageDate = new Date().toISOString().split('T')[0];
-    await user.save();
+async function updateUserField(telegramId, field, value) {
+  try {
+    await User.updateOne({ telegramId }, { [field]: value });
+  } catch (error) {
+    console.error(`Error updating user field ${field}:`, error);
   }
+}
 
-  return { allowed: true, model: result.model };
+async function incrementStreak(telegramId) {
+  try {
+    await User.updateOne({ telegramId }, { $inc: { streak: 1 } });
+  } catch (error) {
+    console.error('Error incrementing streak:', error);
+  }
+}
+
+async function resetStreak(telegramId) {
+  try {
+    await User.updateOne({ telegramId }, { streak: 0 });
+  } catch (error) {
+    console.error('Error resetting streak:', error);
+  }
+}
+
+async function saveDailyTasks(telegramId, tasks) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    await User.updateOne(
+      { telegramId },
+      { $set: { [`dailyTasks.${today}`]: tasks } }
+    );
+  } catch (error) {
+    console.error('Error saving daily tasks:', error);
+  }
+}
+
+async function getTodayTasks(telegramId) {
+  try {
+    const user = await User.findOne({ telegramId });
+    if (!user) return [];
+
+    const today = new Date().toISOString().split('T')[0];
+    return user.dailyTasks?.[today] || [];
+  } catch (error) {
+    console.error('Error getting today tasks:', error);
+    return [];
+  }
+}
+
+async function markTaskStatus(telegramId, status) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    await User.updateOne({ telegramId }, { $set: { [`taskStatus.${today}`]: status } });
+  } catch (error) {
+    console.error('Error marking task status:', error);
+  }
+}
+
+async function checkTaskStatus(telegramId) {
+  try {
+    const user = await User.findOne({ telegramId });
+    const today = new Date().toISOString().split('T')[0];
+    return user?.taskStatus?.[today] || null;
+  } catch (error) {
+    console.error('Error checking task status:', error);
+    return null;
+  }
+}
+
+async function incrementAIUsage(telegramId) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    await User.updateOne(
+      { telegramId },
+      { $inc: { [`aiUsage.${today}`]: 1 } }
+    );
+  } catch (error) {
+    console.error('Error incrementing AI usage:', error);
+  }
+}
+
+async function getAIUsage(telegramId) {
+  try {
+    const user = await User.findOne({ telegramId });
+    const today = new Date().toISOString().split('T')[0];
+    return user?.aiUsage?.[today] || 0;
+  } catch (error) {
+    console.error('Error getting AI usage:', error);
+    return 0;
+  }
+}
+
+async function resetDailyAIUsage() {
+  try {
+    const users = await User.find({});
+    const today = new Date().toISOString().split('T')[0];
+
+    for (const user of users) {
+      user.aiUsage[today] = 0;
+      await user.save();
+    }
+  } catch (error) {
+    console.error('Error resetting daily AI usage:', error);
+  }
+}
+
+async function getUserGoal(telegramId) {
+  try {
+    const user = await User.findOne({ telegramId });
+    return user?.goal || null;
+  } catch (error) {
+    console.error('Error getting user goal:', error);
+    return null;
+  }
 }
 
 module.exports = {
-  findOrCreateUser,
-  updateUser,
-  addDailyTasks,
-  getAIModel
+  getOrCreateUser,
+  updateUserField,
+  incrementStreak,
+  resetStreak,
+  saveDailyTasks,
+  getTodayTasks,
+  markTaskStatus,
+  checkTaskStatus,
+  incrementAIUsage,
+  getAIUsage,
+  resetDailyAIUsage,
+  getUserGoal
 };

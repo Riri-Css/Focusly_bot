@@ -1,89 +1,55 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-  telegramId: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  username: String,
-  name: String,
-  focus: String,
-  stage: {
-    type: String,
-    default: 'awaiting_name'
-  },
+  telegramId: { type: String, required: true, unique: true },
+  username: String,
+  firstName: String,
+  lastName: String,
+  onboardingStep: { type: String, default: null },
 
-  // Onboarding & daily tasks
-  manualChecklist: [String],
-  dailyChecklist: [String],
-  weeklyChecklist: {
-    source: String,
-    raw: [String],
-    createdAt: Date
-  },
-  currentChecklistDay: Number,
-  hasCheckedInToday: {
-    type: Boolean,
-    default: false
-  },
-  lastCheckInDate: String,
-  streak: {
-    type: Number,
-    default: 0
-  },
+  focus: { type: String, default: null },
+  tasks: [String],
 
-  // Reflections
-  history: [
-    {
-      date: String,
-      focus: String,
-      checkedIn: Boolean,
-      tasks: [String]
-    }
-  ],
+  checkIns: [
+    {
+      date: String, // Format: YYYY-MM-DD
+      status: String, // ✅ or ❌
+    }
+  ],
 
-  // Feedback tracking
-  feedbackGiven: {
-    type: Boolean,
-    default: false
-  },
-  feedbackRequestedAt: Date,
-  feedbacks: [
-    {
-      date: Date,
-      text: String
-    }
-  ],
+  streak: { type: Number, default: 0 },
+  lastCheckInDate: { type: String, default: null },
 
-  // Subscription & trial
-  subscriptionStatus: {
-    type: String,
-    enum: ['trial', 'subscribed', 'expired'],
-    default: 'trial'
-  },
-  trialStartDate: Date,
-  subscriptionPlan: {
-    type: String,
-    enum: ['basic', 'premium']
-  },
-  subscriptionExpiryDate: Date,
-  isSubscribed: {
-    type: Boolean,
-    default: false
-  },
+  reminders: {
+    morning: { type: Boolean, default: true },
+    afternoon: { type: Boolean, default: true },
+    evening: { type: Boolean, default: true },
+  },
 
-  // Career assistant
-  strengths: [String],
-  interests: [String],
-  recommendedCareers: [String],
+  trialStartDate: { type: Date, default: Date.now },
+  hasSubscribed: { type: Boolean, default: false },
 
-  // 🧠 AI usage tracking
-  dailyAiUsageCount: {
-    type: Number,
-    default: 0
-  },
-  lastAiUseDate: String
+  subscription: {
+    plan: { type: String, enum: ["Basic", "Premium", null], default: null },
+    status: { type: String, enum: ["active", "inactive", null], default: null },
+    startDate: { type: Date },
+    endDate: { type: Date },
+  },
+
+  aiUsage: {
+    dailyCount: { type: Number, default: 0 },
+    weeklyCount: { type: Number, default: 0 },
+    lastUsedDate: { type: String }, // YYYY-MM-DD
+  },
+
+  feedbackLog: [
+    {
+      type: { type: String }, // e.g. "onboarding", "trial", "post-subscription"
+      message: { type: String },
+      date: { type: Date, default: Date.now },
+    }
+  ]
 });
 
-module.exports = mongoose.models.User || mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
+module.exports = User;
