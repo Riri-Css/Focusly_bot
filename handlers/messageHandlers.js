@@ -4,15 +4,15 @@ const { checkAccessLevel, incrementUsage, getAIModelAndAccess } = require('../ut
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
 
-module.exports = function (bot) {
-  bot.on('message', async (msg) => {
-  if (msg.text === 'ping') {
+async function handleMessage(bot, msg) {
+  const chatId = msg.chat.id;
+  const text = msg.text?.trim();
+
+  if (text === 'ping') {
     return bot.sendMessage(chatId, 'pong, Bot is alive');
   }
-    const chatId = msg.chat.id;
-    const telegramId = msg.from.id.toString();
-    const text = msg.text?.trim();
-    const today = new Date().toISOString().split('T')[0];
+  const telegramId = msg.from.id.toString();
+  const today = new Date().toISOString().split('T')[0];
 
     let user = await findOrCreateUser(telegramId);
     if (!user) return bot.sendMessage(chatId, '❌ Something went wrong creating your profile.');
@@ -92,10 +92,10 @@ module.exports = function (bot) {
     }
 
     return bot.sendMessage(chatId, "🤖 I don’t understand that. Choose an option or ask something meaningful.");
-  });
 };
+
 module.exports = function (bot) {
   bot.on('message', async (msg) => {
-    
+    await handleMessage(bot, msg);
   });
 };
