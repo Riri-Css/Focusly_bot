@@ -1,9 +1,9 @@
-const { getSmartResponse } = require('./utils/openai');
+const { getSmartResponse } = require('./openai');
 const {
   isAIAllowed,
   trackAIUsage,
   getAllowedModelForUser,
-} = require('./utils/subscriptionUtils');
+} = require('./subscriptionUtils');
 
 async function generateChecklist(user, goal, tasksYesterday) {
   try {

@@ -1,4 +1,4 @@
-const OpenAI = require('./utils/openai');
+const OpenAI = require('./openai');
 
 // Make sure you set OPENAI_API_KEY in Render environment
 const openai = new OpenAI({

@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const User = require('../models/user');
 //const { sendTelegramMessage } = require('./utils/telegram');
-const { generateChecklist } = require('./utils/generateChecklist');
+const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
 // ⏰ 8 AM Daily Reminder: For users who haven't submitted tasks
