@@ -14,7 +14,12 @@ const bot = new TelegramBot(process.env.BOT_TOKEN);
 bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
 
 // Middleware
-app.use(bodyParser.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
 
 // Telegram webhook route
 app.post(`/webhook`, (req, res) => {
