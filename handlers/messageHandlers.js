@@ -6,6 +6,7 @@ const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
 
 module.exports = function (bot) {
   bot.on('message', async (msg) => {
+  
     const chatId = msg.chat.id;
     const telegramId = msg.from.id.toString();
     const text = msg.text?.trim();
