@@ -3,7 +3,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const TelegramBot = require('node-telegram-bot-api');
-const { handleMessage } = require('./handlers/messageHandlers');
+const handleMessage = require('./handlers/messageHandlers');
 const webhookRoutes = require('./utils/webhook');
 const paystackWebhook = require('./routes/paystackWebhook');
 
