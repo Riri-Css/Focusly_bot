@@ -1,4 +1,4 @@
-const { User } = require('../models/user');
+const User = require('../models/user');
 
 // ✅ Determine AI model and access
 async function getAIModelAndAccess(user) {
