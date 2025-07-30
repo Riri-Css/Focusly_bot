@@ -58,7 +58,7 @@ async function generateWeeklyChecklist(user) {
 
   try {
     const prompt = `Create a 7-day weekly plan to help someone stay focused on their goal: "${user.focus}". Keep each day short and focused.`;
-    const aiChecklist = await getSmartResponse(prompt, 'weekly');
+    const aiChecklist = await getSmartResponse(user, prompt, TextTrackCue);
 
     // Save usage info
     await user.save();

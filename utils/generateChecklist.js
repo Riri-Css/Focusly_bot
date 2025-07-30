@@ -54,7 +54,7 @@ async function generateChecklist(user) {
 
   try {
     const prompt = `Generate a simple 3-step checklist to help with the goal: "${user.focus}". Keep it short and actionable.`;
-    const aiChecklist = await getSmartResponse(prompt, 'checklist');
+    const aiChecklist = await getSmartResponse(user, prompt, true);
 
     // Update user usage info
     await user.save();
