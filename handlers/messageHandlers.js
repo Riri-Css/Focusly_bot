@@ -100,3 +100,14 @@ module.exports = function (bot) {
     return bot.sendMessage(chatId, "🤖 I don’t understand that. Choose an option or ask something meaningful.");
   });
 };
+module.exports = {
+  generateChecklist,
+  generateWeeklyChecklist,
+  findOrCreateUser,
+  updateUser,
+  addDailyTasks,
+  getAIModelAndAccess,
+  handleMessage,
+  handleStart, 
+  
+}
