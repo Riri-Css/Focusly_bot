@@ -1,26 +1,26 @@
-const { getSmartResponse } = require('./openai');
-const {
-  isAIAllowed,
-  trackAIUsage,
-  getAllowedModelForUser,
-} = require('./utils/subscriptionUtils');
+const openai = require('./openai');
 
-async function generateSmartReply(user, prompt) {
+async function getSmartResponse(prompt, model = 'gpt-4o') {
   try {
-    const aiAllowed = isAIAllowed(user);
-    if (!aiAllowed) {
-      return "You're currently on a free plan. Upgrade to unlock smart AI responses.";
-    }
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a friendly but disciplined productivity coach that helps users stay focused, consistent, and accountable. You provide actionable, short, and motivating responses.',
+        },
+        { role: 'user', content: prompt },
+      ],
+    });
 
-    const model = getAllowedModelForUser(user);
-    const response = await getSmartResponse(prompt, model);
-    await trackAIUsage(user);
-
-    return response;
+    return completion.choices[0].message.content.trim();
   } catch (error) {
-    console.error('generateSmartReply error:', error);
-    return "Something went wrong generating your response. Please try again.";
+    console.error('OpenAI error:', error);
+    return "Sorry, I'm currently unable to respond. Please try again later.";
   }
 }
 
-module.exports = generateSmartReply;
+module.exports = {
+  getSmartResponse,
+};
