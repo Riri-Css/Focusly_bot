@@ -3,10 +3,12 @@ const getSmartResponse = require('../utils/getSmartResponse');
 const { checkAccessLevel, incrementUsage, getAIModelAndAccess } = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
-
+if (msg.text === 'ping') {
+  return bot.sendMessage(chatId, 'pong, Bot is alive');
+}
 module.exports = function (bot) {
   bot.on('message', async (msg) => {
-  
+
     const chatId = msg.chat.id;
     const telegramId = msg.from.id.toString();
     const text = msg.text?.trim();

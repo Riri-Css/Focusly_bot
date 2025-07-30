@@ -1,6 +1,8 @@
 const User = require('../models/user');
 
 // ✅ Determine AI model and access
+const User = require('../models/user');
+
 async function getAIModelAndAccess(user) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -51,14 +53,20 @@ async function hasAccessToAI(user, isChecklist = false) {
 }
 
 // ✅ Increment usage
-async function incrementUsage(telegramId) {
+//try {
+  async function incrementUsage(telegramId) {
   const user = await User.findOne({ telegramId });
   if (!user) return;
 
   user.usageCount = (user.usageCount || 0) + 1;
   user.lastUsageDate = new Date().toISOString().split('T')[0];
   await user.save();
-}
+  }
+  //catch (err) {
+    //console.error('Error incrementing usage:', err.message);
+    //return bot.sendMessage(ChatId, "Something went wrong while processing your message. Please try again later.");
+  //}
+//}
 
 // ✅ Used for access tier messages
 function checkAccessLevel(user) {
