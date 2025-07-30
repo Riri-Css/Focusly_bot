@@ -15,7 +15,8 @@ app.use(bodyParser.json());
 
 // Setup Telegram Bot
 const bot = new TelegramBot(process.env.BOT_TOKEN);
-app.post(`/bot${process.env.BOT_TOKEN}`, (req, res) => {
+app.post('/', (req, res) => {
+
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
