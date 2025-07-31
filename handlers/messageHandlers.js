@@ -26,37 +26,45 @@ async function handleMessage(bot, msg) {
   }
 
   try {
-    // Ensure user exists
     let user = await getUserByTelegramId(userId);
     if (!user) {
       user = await createOrUpdateUser(userId, { telegramId: userId });
     }
 
-    // Check AI access
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
       await bot.sendMessage(chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
       return;
     }
 
-    // Choose AI model
     const model = getModelForUser(user);
     if (!model) {
       await bot.sendMessage(chatId, "Your current plan doesn’t support AI access. Upgrade to continue.");
       return;
     }
 
-    // Generate AI response
     const aiReplyRaw = await getSmartResponse(text, model);
-    const aiReply = Array.isArray(aiReplyRaw) ? aiReplyRaw.join('\n\n') : aiReplyRaw;
 
-    if (!aiReplyRaw || typeof aiReplyRaw !== 'string') {
-      console.error("⚠️ Invalid AI reply received:", aiReplyRaw);
+    // ✅ Force reply into valid string
+    let aiReply = '';
+    if (Array.isArray(aiReplyRaw)) {
+      aiReply = aiReplyRaw.filter(r => typeof r === 'string').join('\n\n');
+    } else if (typeof aiReplyRaw === 'string') {
+      aiReply = aiReplyRaw;
+    } else {
+      console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
       await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
       return;
     }
 
-    const replyParts = aiReplyRaw.split('\n\n');
+    if (!aiReply.trim()) {
+      console.error("⚠️ Empty AI reply:", aiReplyRaw);
+      await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
+      return;
+    }
+
+    // Split and send in chunks
+    const replyParts = aiReply.split('\n\n');
     for (const part of replyParts) {
       if (part.trim()) {
         await bot.sendMessage(chatId, part.trim());
@@ -64,7 +72,6 @@ async function handleMessage(bot, msg) {
       }
     }
 
-    // Track usage
     await trackAIUsage(user, 'general');
 
   } catch (error) {
