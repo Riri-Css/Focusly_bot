@@ -1,7 +1,13 @@
-const { getOrCreateUser, updateUserField, incrementStreak, resetStreak, getTodayTasks, markTaskStatus, checkTaskStatus, incrementAIUsage, getAIUsage, saveDailyTasks } = require('../controllers/userController');
-const { checkSubscriptionStatus, getRemainingAIQuota, getModelForUser } = require('../utils/subscriptionUtils');
+const {
+  getOrCreateUser, updateUserField, incrementStreak, resetStreak,
+  getTodayTasks, markTaskStatus, checkTaskStatus,
+  incrementAIUsage, getAIUsage, saveDailyTasks
+} = require('../controllers/userController');
+const {
+  checkSubscriptionStatus, getRemainingAIQuota, getModelForUser
+} = require('../utils/subscriptionUtils');
 const generateChecklist = require('../utils/generateChecklist');
-const getSmartResponse = require('../utils/getSmartResponse');
+const { getSmartResponse } = require('../utils/getSmartResponse');
 
 async function handleMessage(bot, msg) {
   const chatId = msg.chat.id;
@@ -98,7 +104,7 @@ async function handleMessage(bot, msg) {
     }
 
     const model = getModelForUser(subscription.plan);
-    const reply = await getSmartResponse(user, text, model);
+    const reply = await getSmartResponse(text, model); // ✅ Corrected order here
 
     if (reply) {
       await bot.sendMessage(chatId, reply);
