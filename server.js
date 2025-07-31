@@ -1,23 +1,51 @@
-// bot.js
 require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
+const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const TelegramBot = require('node-telegram-bot-api');
+const paystackWebhook = require('./routes/paystackWebhook');
 const messageHandlers = require('./handlers/messageHandlers');
+const subscriptionRoutes = require('./handlers/subscriptionHandlers');
 const { startDailyJobs } = require('./utils/cronJobs');
 const { scheduleCustomReminders } = require('./utils/reminderScheduler');
 
-// 🔁 Initialize bot in webhook mode
-const bot = new TelegramBot(process.env.BOT_TOKEN, {
-  webHook: {
-    port: process.env.BOT_PORT || 3000,
+// === Initialize Express App ===
+const app = express();
+app.use(bodyParser.json());
+
+// === Telegram Bot Setup (Webhook Mode) ===
+const bot = new TelegramBot(process.env.BOT_TOKEN);
+const url = process.env.RENDER_EXTERNAL_URL;
+const port = process.env.PORT || 3000;
+
+// Set Telegram webhook to Render URL
+bot.setWebHook(`${url}/bot${process.env.BOT_TOKEN}`);
+
+// Handle Telegram updates via webhook
+app.post(`/bot${process.env.BOT_TOKEN}`, async (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Handle incoming messages
+bot.on('message', async (msg) => {
+  try {
+    console.log("📩 Incoming message:", msg.text);
+    await messageHandlers.handleMessage(bot, msg);
+  } catch (err) {
+    console.error("❌ Error handling message:", err);
   }
 });
 
-// Set Telegram webhook (do this ONCE after deployment)
-// You can comment this out later if needed
-const webhookUrl = `${process.env.BASE_URL}/webhook`;
-bot.setWebHook(webhookUrl);
+// === Paystack Webhook ===
+app.use('/paystack/webhook', paystackWebhook);
 
+// === Root route for basic health check ===
+app.get('/', (req, res) => {
+  res.send('🚀 Focusly Telegram bot server is live!');
+});
+
+// === MongoDB Connection and Cron Jobs ===
 (async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
@@ -26,18 +54,11 @@ bot.setWebHook(webhookUrl);
     startDailyJobs(bot);
     scheduleCustomReminders(bot);
   } catch (err) {
-    console.error('❌ MongoDB connection error:', err);
+    console.error('❌ MongoDB connection failed:', err);
   }
 })();
 
-// Incoming Telegram messages (via webhook)
-bot.on('message', async (msg) => {
-  try {
-    console.log("User sent a message:", msg.text);
-    await messageHandlers.handleMessage(bot, msg);
-  } catch (err) {
-    console.error("❌ Error handling message:", err);
-  }
+// === Start the Express Server ===
+app.listen(port, () => {
+  console.log(`🌐 Express server running on port ${port}`);
 });
-
-module.exports = bot;
