@@ -1,5 +1,6 @@
 const User = require('../models/user');
-//const { defaultTasks } = require('../constants');
+
+// ─── User Retrieval ───────────────────────────────────────────────
 
 async function getOrCreateUser(telegramId) {
   try {
@@ -22,6 +23,8 @@ async function updateUserField(telegramId, field, value) {
   }
 }
 
+// ─── Streak Management ─────────────────────────────────────────────
+
 async function incrementStreak(telegramId) {
   try {
     await User.updateOne({ telegramId }, { $inc: { streak: 1 } });
@@ -37,6 +40,8 @@ async function resetStreak(telegramId) {
     console.error('Error resetting streak:', error);
   }
 }
+
+// ─── Task Management ──────────────────────────────────────────────
 
 async function saveDailyTasks(telegramId, tasks) {
   try {
@@ -54,7 +59,6 @@ async function getTodayTasks(telegramId) {
   try {
     const user = await User.findOne({ telegramId });
     if (!user) return [];
-
     const today = new Date().toISOString().split('T')[0];
     return user.dailyTasks?.[today] || [];
   } catch (error) {
@@ -83,9 +87,16 @@ async function checkTaskStatus(telegramId) {
   }
 }
 
+// ─── AI Usage Tracking ─────────────────────────────────────────────
+
 async function incrementAIUsage(telegramId) {
   try {
     const today = new Date().toISOString().split('T')[0];
+    const usage = await getAIUsage(telegramId);
+    const plan = await getUserSubscription(telegramId);
+
+    if (plan.type === 'basic' && usage >= 10) return; // block after 10/week
+
     await User.updateOne(
       { telegramId },
       { $inc: { [`aiUsage.${today}`]: 1 } }
@@ -120,6 +131,8 @@ async function resetDailyAIUsage() {
   }
 }
 
+// ─── Goal and Subscription ────────────────────────────────────────
+
 async function getUserGoal(telegramId) {
   try {
     const user = await User.findOne({ telegramId });
@@ -129,6 +142,53 @@ async function getUserGoal(telegramId) {
     return null;
   }
 }
+
+async function getUserSubscription(telegramId) {
+  try {
+    const user = await User.findOne({ telegramId });
+    if (!user) return { type: 'none', expired: true };
+
+    const now = new Date();
+    const trialExpired = user.createdAt && (now - user.createdAt) / (1000 * 60 * 60 * 24) > 14;
+
+    if (user.subscription && user.subscription.status === 'active') {
+      const expiry = new Date(user.subscription.expiryDate);
+      const expired = expiry < now;
+      return {
+        type: user.subscription.plan,
+        expired,
+        expiryDate: expiry,
+      };
+    }
+
+    return {
+      type: trialExpired ? 'none' : 'trial',
+      expired: trialExpired,
+    };
+  } catch (error) {
+    console.error('Error getting user subscription:', error);
+    return { type: 'none', expired: true };
+  }
+}
+
+async function canUseAI(telegramId) {
+  const usage = await getAIUsage(telegramId);
+  const sub = await getUserSubscription(telegramId);
+
+  if (sub.type === 'premium' && !sub.expired) return true;
+  if (sub.type === 'basic' && !sub.expired) return usage < 10;
+  if (sub.type === 'trial' && !sub.expired) return usage < 5;
+
+  return false;
+}
+
+async function getAvailableModel(telegramId) {
+  const sub = await getUserSubscription(telegramId);
+  if (sub.type === 'premium' && !sub.expired) return 'gpt-4o';
+  return 'gpt-3.5-turbo';
+}
+
+// ─── Exports ──────────────────────────────────────────────────────
 
 module.exports = {
   getOrCreateUser,
@@ -142,5 +202,8 @@ module.exports = {
   incrementAIUsage,
   getAIUsage,
   resetDailyAIUsage,
-  getUserGoal
+  getUserGoal,
+  getUserSubscription,
+  canUseAI,
+  getAvailableModel,
 };
