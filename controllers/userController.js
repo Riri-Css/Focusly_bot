@@ -1,209 +1,121 @@
 const User = require('../models/user');
+const { getCurrentModelForUser } = require('../utils/subscriptionUtils');
 
-// ─── User Retrieval ───────────────────────────────────────────────
+async function getOrCreateUser(telegramId, username) {
+  let user = await User.findOne({ telegramId });
 
-async function getOrCreateUser(telegramId) {
-  try {
-    let user = await User.findOne({ telegramId });
-    if (!user) {
-      user = await User.create({ telegramId });
-    }
-    return user;
-  } catch (error) {
-    console.error('Error in getOrCreateUser:', error);
-    return null;
+  if (!user) {
+    user = new User({
+      telegramId,
+      username,
+      onboardingStep: 'start',
+      tasks: [],
+      streak: 0,
+      lastCheckInDate: null,
+      trialStartDate: new Date(),
+      aiUsage: {
+        dailyUses: 0,
+        weeklyUses: 0,
+        lastUsedDate: null
+      }
+    });
+    await user.save();
+  }
+
+  return user;
+}
+
+// ✅ FIX: Add this missing function
+async function getUserByTelegramId(telegramId) {
+  return await User.findOne({ telegramId });
+}
+
+async function updateUser(telegramId, update) {
+  return await User.findOneAndUpdate({ telegramId }, update, { new: true });
+}
+
+async function resetDailyUsageIfNeeded(user) {
+  const today = new Date().toDateString();
+  const lastUsed = user.aiUsage?.lastUsedDate?.toDateString();
+
+  if (today !== lastUsed) {
+    user.aiUsage.dailyUses = 0;
+    user.aiUsage.lastUsedDate = new Date();
+    await user.save();
   }
 }
 
-async function updateUserField(telegramId, field, value) {
-  try {
-    await User.updateOne({ telegramId }, { [field]: value });
-  } catch (error) {
-    console.error(`Error updating user field ${field}:`, error);
+async function resetWeeklyUsageIfNeeded(user) {
+  const now = new Date();
+  const currentWeek = getWeekNumber(now);
+  const lastUsed = user.aiUsage?.lastUsedDate;
+
+  if (!lastUsed || getWeekNumber(lastUsed) !== currentWeek) {
+    user.aiUsage.weeklyUses = 0;
+    user.aiUsage.lastUsedDate = new Date();
+    await user.save();
   }
 }
 
-// ─── Streak Management ─────────────────────────────────────────────
-
-async function incrementStreak(telegramId) {
-  try {
-    await User.updateOne({ telegramId }, { $inc: { streak: 1 } });
-  } catch (error) {
-    console.error('Error incrementing streak:', error);
-  }
+function getWeekNumber(date) {
+  const firstDay = new Date(date.getFullYear(), 0, 1);
+  const days = Math.floor((date - firstDay) / (24 * 60 * 60 * 1000));
+  return Math.ceil((days + firstDay.getDay() + 1) / 7);
 }
 
-async function resetStreak(telegramId) {
-  try {
-    await User.updateOne({ telegramId }, { streak: 0 });
-  } catch (error) {
-    console.error('Error resetting streak:', error);
+async function hasAIUsageAccess(user, type = 'general') {
+  const now = new Date();
+  const trialEnds = new Date(user.trialStartDate);
+  trialEnds.setDate(trialEnds.getDate() + 14);
+
+  const isTrialActive = now <= trialEnds;
+  const isSubscribed = user.subscription && user.subscription.status === 'active';
+
+  await resetDailyUsageIfNeeded(user);
+  await resetWeeklyUsageIfNeeded(user);
+
+  const usage = user.aiUsage || { dailyUses: 0, weeklyUses: 0 };
+
+  // Premium plan: unlimited
+  if (user.subscription?.plan === 'premium' && isSubscribed) return true;
+
+  // Trial: 5 daily uses
+  if (isTrialActive && usage.dailyUses < 5) return true;
+
+  // Basic: 10 weekly checklist-only uses
+  if (user.subscription?.plan === 'basic' && isSubscribed) {
+    if (type === 'checklist' && usage.weeklyUses < 10) return true;
+    return false; // basic can't use general AI
   }
-}
-
-// ─── Task Management ──────────────────────────────────────────────
-
-async function saveDailyTasks(telegramId, tasks) {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    await User.updateOne(
-      { telegramId },
-      { $set: { [`dailyTasks.${today}`]: tasks } }
-    );
-  } catch (error) {
-    console.error('Error saving daily tasks:', error);
-  }
-}
-
-async function getTodayTasks(telegramId) {
-  try {
-    const user = await User.findOne({ telegramId });
-    if (!user) return [];
-    const today = new Date().toISOString().split('T')[0];
-    return user.dailyTasks?.[today] || [];
-  } catch (error) {
-    console.error('Error getting today tasks:', error);
-    return [];
-  }
-}
-
-async function markTaskStatus(telegramId, status) {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    await User.updateOne({ telegramId }, { $set: { [`taskStatus.${today}`]: status } });
-  } catch (error) {
-    console.error('Error marking task status:', error);
-  }
-}
-
-async function checkTaskStatus(telegramId) {
-  try {
-    const user = await User.findOne({ telegramId });
-    const today = new Date().toISOString().split('T')[0];
-    return user?.taskStatus?.[today] || null;
-  } catch (error) {
-    console.error('Error checking task status:', error);
-    return null;
-  }
-}
-
-// ─── AI Usage Tracking ─────────────────────────────────────────────
-
-async function incrementAIUsage(telegramId) {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const usage = await getAIUsage(telegramId);
-    const plan = await getUserSubscription(telegramId);
-
-    if (plan.type === 'basic' && usage >= 10) return; // block after 10/week
-
-    await User.updateOne(
-      { telegramId },
-      { $inc: { [`aiUsage.${today}`]: 1 } }
-    );
-  } catch (error) {
-    console.error('Error incrementing AI usage:', error);
-  }
-}
-
-async function getAIUsage(telegramId) {
-  try {
-    const user = await User.findOne({ telegramId });
-    const today = new Date().toISOString().split('T')[0];
-    return user?.aiUsage?.[today] || 0;
-  } catch (error) {
-    console.error('Error getting AI usage:', error);
-    return 0;
-  }
-}
-
-async function resetDailyAIUsage() {
-  try {
-    const users = await User.find({});
-    const today = new Date().toISOString().split('T')[0];
-
-    for (const user of users) {
-      user.aiUsage[today] = 0;
-      await user.save();
-    }
-  } catch (error) {
-    console.error('Error resetting daily AI usage:', error);
-  }
-}
-
-// ─── Goal and Subscription ────────────────────────────────────────
-
-async function getUserGoal(telegramId) {
-  try {
-    const user = await User.findOne({ telegramId });
-    return user?.goal || null;
-  } catch (error) {
-    console.error('Error getting user goal:', error);
-    return null;
-  }
-}
-
-async function getUserSubscription(telegramId) {
-  try {
-    const user = await User.findOne({ telegramId });
-    if (!user) return { type: 'none', expired: true };
-
-    const now = new Date();
-    const trialExpired = user.createdAt && (now - user.createdAt) / (1000 * 60 * 60 * 24) > 14;
-
-    if (user.subscription && user.subscription.status === 'active') {
-      const expiry = new Date(user.subscription.expiryDate);
-      const expired = expiry < now;
-      return {
-        type: user.subscription.plan,
-        expired,
-        expiryDate: expiry,
-      };
-    }
-
-    return {
-      type: trialExpired ? 'none' : 'trial',
-      expired: trialExpired,
-    };
-  } catch (error) {
-    console.error('Error getting user subscription:', error);
-    return { type: 'none', expired: true };
-  }
-}
-
-async function canUseAI(telegramId) {
-  const usage = await getAIUsage(telegramId);
-  const sub = await getUserSubscription(telegramId);
-
-  if (sub.type === 'premium' && !sub.expired) return true;
-  if (sub.type === 'basic' && !sub.expired) return usage < 10;
-  if (sub.type === 'trial' && !sub.expired) return usage < 5;
 
   return false;
 }
 
-async function getAvailableModel(telegramId) {
-  const sub = await getUserSubscription(telegramId);
-  if (sub.type === 'premium' && !sub.expired) return 'gpt-4o';
-  return 'gpt-3.5-turbo';
+async function incrementAIUsage(user, type = 'general') {
+  await resetDailyUsageIfNeeded(user);
+  await resetWeeklyUsageIfNeeded(user);
+
+  if (user.trialStartDate) {
+    user.aiUsage.dailyUses += 1;
+  } else if (user.subscription?.plan === 'basic' && type === 'checklist') {
+    user.aiUsage.weeklyUses += 1;
+  } else if (user.subscription?.plan === 'premium') {
+    // Premium has unlimited access, no increment needed
+  }
+
+  user.aiUsage.lastUsedDate = new Date();
+  await user.save();
 }
 
-// ─── Exports ──────────────────────────────────────────────────────
+async function getModelForUser(user) {
+  return getCurrentModelForUser(user); // picks gpt-3.5 or gpt-4o
+}
 
 module.exports = {
   getOrCreateUser,
-  updateUserField,
-  incrementStreak,
-  resetStreak,
-  saveDailyTasks,
-  getTodayTasks,
-  markTaskStatus,
-  checkTaskStatus,
+  getUserByTelegramId, // ✅ EXPORT FIXED HERE
+  updateUser,
+  hasAIUsageAccess,
   incrementAIUsage,
-  getAIUsage,
-  resetDailyAIUsage,
-  getUserGoal,
-  getUserSubscription,
-  canUseAI,
-  getAvailableModel,
+  getModelForUser
 };
