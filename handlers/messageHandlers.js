@@ -46,12 +46,21 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // Generate response
-    const aiReply = await getSmartResponse(text, model);
-    const replyParts = aiReply.split('\n\n');
+    // Generate AI response
+    const aiReplyRaw = await getSmartResponse(text, model);
+
+    if (!aiReplyRaw || typeof aiReplyRaw !== 'string') {
+      console.error("⚠️ Invalid AI reply received:", aiReplyRaw);
+      await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
+      return;
+    }
+
+    const replyParts = aiReplyRaw.split('\n\n');
     for (const part of replyParts) {
-      await bot.sendMessage(chatId, part.trim());
-      await delay(1000);
+      if (part.trim()) {
+        await bot.sendMessage(chatId, part.trim());
+        await delay(1000);
+      }
     }
 
     // Track usage
