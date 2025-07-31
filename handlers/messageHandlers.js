@@ -1,121 +1,119 @@
-const {
-  getOrCreateUser, updateUserField, incrementStreak, resetStreak,
-  getTodayTasks, markTaskStatus, checkTaskStatus,
-  incrementAIUsage, getAIUsage, saveDailyTasks
-} = require('../controllers/userController');
-const {
-  checkSubscriptionStatus, getRemainingAIQuota, getModelForUser
-} = require('../utils/subscriptionUtils');
-const generateChecklist = require('../utils/generateChecklist');
+const User = require('../models/user');
 const { getSmartResponse } = require('../utils/getSmartResponse');
+const { generateChecklist } = require('../utils/generateChecklist');
+const { generateWeeklyChecklist } = require('../utils/generateWeeklyChecklist');
+const { updateUserUsageAndModel, hasAccessToAI } = require('../utils/subscriptionUtils');
 
-async function handleMessage(bot, msg) {
+async function handleMessage(msg, bot) {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
-  const telegramId = msg.from.id;
-
   if (!text) return;
 
-  const user = await getOrCreateUser(telegramId);
+  let user = await User.findOne({ telegramId: chatId });
+
   if (!user) {
-    await bot.sendMessage(chatId, "Something went wrong. Please try again.");
-    return;
+    user = new User({
+      telegramId: chatId,
+      onboardingStep: 'goal',
+      streak: 0,
+      createdAt: new Date(),
+      trialStartDate: new Date(),
+      isTrial: true,
+      subscriptionStatus: 'trial',
+    });
+    await user.save();
+
+    return bot.sendMessage(chatId, "👋 Hi! Welcome to Focusly.\n\nWhat’s one goal you’d like to stay focused on this week?");
   }
 
-  const lowerText = text.toLowerCase();
+  // Onboarding: Step 1 – Set Focus
+  if (!user.focus && user.onboardingStep === 'goal') {
+    user.focus = text;
+    user.onboardingStep = 'tasks';
+    await user.save();
 
-  // === 1. ONBOARDING ===
-  if (!user.goal) {
-    await updateUserField(telegramId, 'goal', text);
-    await bot.sendMessage(chatId, `Nice! So your focus is: *${text}*. Let's stay consistent.`, { parse_mode: 'Markdown' });
+    return bot.sendMessage(chatId, `Great! Your focus is: *${text}*\n\nNow send me 2–5 specific tasks you’ll do to achieve this goal today.`, { parse_mode: 'Markdown' });
+  }
 
-    const defaultTasks = [`Work on ${text}`, `Avoid distractions`, `Review progress`, `Learn something new`, `Stay focused`];
-    await saveDailyTasks(telegramId, defaultTasks);
-
-    await bot.sendMessage(chatId, "Here’s a smart daily checklist for today:");
-    for (const task of defaultTasks) {
-      await bot.sendMessage(chatId, `▫️ ${task}`);
+  // Onboarding: Step 2 – Set Tasks
+  if (user.focus && !user.tasks.length && user.onboardingStep === 'tasks') {
+    const tasks = text.split('\n').filter(Boolean);
+    if (tasks.length < 1) {
+      return bot.sendMessage(chatId, '❗ Please send at least 2 tasks for today. One per line.');
     }
 
-    return;
+    user.tasks = tasks.slice(0, 5);
+    user.checkInCompleted = false;
+    user.dailyReflection = '';
+    user.onboardingStep = 'done';
+    user.lastCheckInDate = new Date();
+    await user.save();
+
+    return bot.sendMessage(chatId, `✅ Got it!\n\nI'll check in with you at 9 PM to see how it went. Stay focused!\n\nYour tasks:\n${user.tasks.map((t, i) => `${i + 1}. ${t}`).join('\n')}`);
   }
 
-  // === 2. CHECK-IN ===
-  if (lowerText === '✅' || lowerText === '❌') {
-    const status = lowerText === '✅' ? 'completed' : 'skipped';
-    await markTaskStatus(telegramId, status);
+  // Daily check-in (✅ / ❌ response)
+  const lowered = text.toLowerCase();
+  const isToday = user.lastCheckInDate?.toDateString() === new Date().toDateString();
+  if (!user.checkInCompleted && isToday && (lowered === '✅' || lowered === '❌')) {
+    user.checkInCompleted = true;
 
-    if (status === 'completed') {
-      await incrementStreak(telegramId);
-      await bot.sendMessage(chatId, "🔥 Great job staying focused today! +1 streak!");
+    if (lowered === '✅') {
+      user.streak += 1;
+      user.dailyReflection = '';
+      await user.save();
+
+      let celebration = '';
+      if (user.streak > 0 && user.streak % 3 === 0) {
+        celebration = `🎉 You're on a ${user.streak}-day streak! Keep crushing it!`;
+      }
+
+      return bot.sendMessage(chatId, `Awesome job checking in today! ✅\n${celebration}`);
     } else {
-      await resetStreak(telegramId);
-      await bot.sendMessage(chatId, "😕 You skipped your tasks today. Streak reset. Let’s bounce back tomorrow.");
-    }
+      user.streak = 0;
+      user.dailyReflection = '';
+      await user.save();
 
-    return;
+      return bot.sendMessage(chatId, `Thanks for checking in. ❌\nLet's figure out what went wrong and do better tomorrow.`);
+    }
   }
 
-  // === 3. USER ASKS FOR CHECKLIST ===
-  if (lowerText.includes('checklist')) {
-    try {
-      const subscription = await checkSubscriptionStatus(telegramId);
-      if (subscription.status === 'none') {
-        await bot.sendMessage(chatId, "🚫 You need a subscription to use the AI checklist. Start your free trial or subscribe to unlock.");
-        return;
-      }
-
-      const quotaLeft = await getRemainingAIQuota(telegramId);
-      if (quotaLeft <= 0) {
-        await bot.sendMessage(chatId, "⚠️ You've reached your AI usage limit. Upgrade to Premium for unlimited access.");
-        return;
-      }
-
-      const model = getModelForUser(subscription.plan);
-      const checklist = await generateChecklist(user.goal, model);
-
-      await incrementAIUsage(telegramId);
-      await saveDailyTasks(telegramId, checklist);
-
-      await bot.sendMessage(chatId, "📋 Here’s your smart checklist:");
-      for (const item of checklist) {
-        await bot.sendMessage(chatId, `▫️ ${item}`);
-      }
-    } catch (error) {
-      console.error("Error generating checklist:", error);
-      await bot.sendMessage(chatId, "⚠️ Couldn't generate checklist right now. Try again later.");
-    }
-
-    return;
+  // Daily Reflection
+  if (user.checkInCompleted && isToday && !user.dailyReflection) {
+    user.dailyReflection = text;
+    await user.save();
+    return bot.sendMessage(chatId, '📝 Thanks for sharing. Your reflection has been saved.');
   }
 
-  // === 4. GENERAL AI MESSAGES ===
-  try {
-    const subscription = await checkSubscriptionStatus(telegramId);
-    if (subscription.status === 'none') {
-      await bot.sendMessage(chatId, "👋 You can chat with me freely after starting your 14-day free trial.");
-      return;
-    }
+  // If user asks for a new checklist
+  if (lowered.includes('checklist') || lowered.includes('plan') || lowered.includes('what should I do')) {
+    const hasAccess = await hasAccessToAI(user);
+    if (!hasAccess) return bot.sendMessage(chatId, "⚠️ You’ve reached your AI usage limit. Upgrade your plan to get more access.");
 
-    const quotaLeft = await getRemainingAIQuota(telegramId);
-    if (quotaLeft <= 0) {
-      await bot.sendMessage(chatId, "⛔ You've used up your AI access for now. Consider upgrading to Premium.");
-      return;
-    }
-
-    const model = getModelForUser(subscription.plan);
-    const reply = await getSmartResponse(text, model); // ✅ Corrected order here
-
-    if (reply) {
-      await bot.sendMessage(chatId, reply);
-      await incrementAIUsage(telegramId);
-    } else {
-      await bot.sendMessage(chatId, "🤔 I’m not sure how to respond. Try asking something else!");
-    }
-  } catch (err) {
-    console.error("Error in general AI chat:", err);
-    await bot.sendMessage(chatId, "⚠️ Something went wrong. Please try again later.");
+    const checklist = await generateChecklist(user);
+    await updateUserUsageAndModel(user);
+    return bot.sendMessage(chatId, `🧠 Here's a fresh checklist to help with your focus:\n\n${checklist}`);
   }
+
+  // If user asks for weekly checklist
+  if (lowered.includes('weekly')) {
+    const hasAccess = await hasAccessToAI(user);
+    if (!hasAccess) return bot.sendMessage(chatId, "⚠️ You’ve reached your AI usage limit. Upgrade your plan to get more access.");
+
+    const weeklyChecklist = await generateWeeklyChecklist(user);
+    await updateUserUsageAndModel(user);
+    return bot.sendMessage(chatId, `📅 Here's your weekly action plan:\n\n${weeklyChecklist}`);
+  }
+
+  // Smart AI response for general input
+  const hasAccess = await hasAccessToAI(user);
+  if (!hasAccess) return bot.sendMessage(chatId, "⚠️ You’ve reached your AI usage limit. Upgrade your plan to get more access.");
+
+  const smartReply = await getSmartResponse(user, text);
+  await updateUserUsageAndModel(user);
+  return bot.sendMessage(chatId, smartReply);
 }
 
-module.exports = { handleMessage };
+module.exports = {
+  handleMessage,
+};
