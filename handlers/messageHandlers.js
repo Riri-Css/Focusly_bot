@@ -1,7 +1,7 @@
 const User = require('../models/user');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { generateChecklist } = require('../utils/generateChecklist');
-const { generateWeeklyChecklist } = require('../utils/generateWeeklyChecklist');
+const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 const { updateUserUsageAndModel, hasAccessToAI } = require('../utils/subscriptionUtils');
 
 async function handleMessage(msg, bot) {
