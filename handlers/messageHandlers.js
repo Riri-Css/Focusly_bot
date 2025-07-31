@@ -1,6 +1,10 @@
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { getUserByTelegramId, createOrUpdateUser } = require('../controllers/userController');
-const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
+const {
+  hasAIUsageAccess,
+  trackAIUsage,
+  getModelForUser,
+} = require('../utils/subscriptionUtils');
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -23,30 +27,35 @@ async function handleMessage(bot, msg) {
 
   try {
     // Ensure user exists
-    const user = await getUserByTelegramId(userId) || await createOrUpdateUser(userId, { telegramId: userId });
+    let user = await getUserByTelegramId(userId);
+    if (!user) {
+      user = await createOrUpdateUser(userId, { telegramId: userId });
+    }
 
-    // Check if AI access is allowed
+    // Check AI access
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
       await bot.sendMessage(chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
       return;
     }
 
-    // Get model (based on plan or trial)
-    const model = await getModelForUser(user);
+    // Choose AI model
+    const model = getModelForUser(user);
+    if (!model) {
+      await bot.sendMessage(chatId, "Your current plan doesn’t support AI access. Upgrade to continue.");
+      return;
+    }
 
-    // Get smart response from AI
+    // Generate response
     const aiReply = await getSmartResponse(text, model);
-
-    // Send reply with delay if multiple parts
     const replyParts = aiReply.split('\n\n');
     for (const part of replyParts) {
       await bot.sendMessage(chatId, part.trim());
-      await delay(1000); // 1 second pause between parts
+      await delay(1000);
     }
 
     // Track usage
-    await trackAIUsage(user, 'smart');
+    await trackAIUsage(user, 'general');
 
   } catch (error) {
     console.error("❌ Error handling message:", error);
