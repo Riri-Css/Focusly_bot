@@ -48,6 +48,7 @@ async function handleMessage(bot, msg) {
 
     // Generate AI response
     const aiReplyRaw = await getSmartResponse(text, model);
+    const aiReply = Array.isArray(aiReplyRaw) ? aiReplyRaw.join('\n\n') : aiReplyRaw;
 
     if (!aiReplyRaw || typeof aiReplyRaw !== 'string') {
       console.error("⚠️ Invalid AI reply received:", aiReplyRaw);
