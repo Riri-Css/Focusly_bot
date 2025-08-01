@@ -35,6 +35,19 @@ async function getUserByTelegramId(telegramId) {
 async function updateUser(telegramId, update) {
   return await User.findOneAndUpdate({ telegramId }, update, { new: true });
 }
+// Update any field(s) in the user document
+const updateUserField = async (telegramId, fieldsToUpdate) => {
+  try {
+    return await User.findOneAndUpdate(
+      { telegramId },
+      { $set: fieldsToUpdate },
+      { new: true }
+    );
+  } catch (error) {
+    console.error("Error updating user field:", error);
+    return null;
+  }
+};
 
 // Daily reset
 async function resetDailyUsageIfNeeded(user) {
