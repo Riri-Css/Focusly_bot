@@ -1,5 +1,5 @@
 const openai = require('./openai');
-console.log(" Fallback triggered: Calling getSmartResponse with:", message.text);
+//console.log(" Fallback triggered: Calling getSmartResponse with:", message.text);
 async function getSmartResponse(prompt, model = 'gpt-4o') {
   try {
     const completion = await openai.chat.completions.create({
