@@ -1,6 +1,6 @@
 const User = require('../models/user');
 const getSmartResponse = require('../utils/getSmartResponse');
-const { checkAIEligibility, getModelForUser } = require('../utils/subscriptionUtils');
+const { hasAIAUsageAccess, getModelForUser } = require('../utils/subscriptionUtils');
 const { updateUserAIUsage } = require('../controllers/userController');
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
@@ -96,7 +96,7 @@ const handleMessage = async (bot, msg) => {
     // Commands or checklist generation
     if (lowerMessage.includes('checklist')) {
       try {
-        const { allowed, reason } = await checkAIEligibility(user);
+        const { allowed, reason } = await hasAIUsageAccess(user);
         if (!allowed) {
           await bot.sendMessage(chatId, `⚠️ ${reason}`);
           return;
@@ -117,7 +117,7 @@ const handleMessage = async (bot, msg) => {
 
     // Fallback: AI-enhanced reply or default
     try {
-      const { allowed } = await checkAIEligibility(user);
+      const { allowed } = await hasAIUsageAccess(user);
       if (allowed) {
         const model = getModelForUser(user);
         const reply = await getSmartResponse(message, model);
