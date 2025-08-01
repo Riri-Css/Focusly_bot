@@ -20,7 +20,7 @@ const handleMessage = async (bot, msg) => {
         trialStartDate: new Date(),
         aiUsage: [],
       });
-      console.log("About to reply with:", smartReply);
+      //console.log("About to reply with:", smartReply);
       await bot.sendMessage(chatId, '👋 Welcome to Focusly! Let’s get started. What’s your current goal or focus?');
       return;
     }
