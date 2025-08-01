@@ -1,101 +1,90 @@
-const { getSmartResponse } = require('../utils/getSmartResponse');
-const { getUserByTelegramId, getOrCreateUser, updateUserField } = require('../controllers/userController');
-const {
-  hasAIUsageAccess,
-  trackAIUsage,
-  getModelForUser,
-} = require('../utils/subscriptionUtils');
+const openai = require('./openai');
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function getSmartResponse(prompt, model = 'gpt-4o', user = {}) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: `
+You are Focusly — a tough-love productivity coach and mindset strategist.
+
+You help users:
+- Stay accountable to their goals
+- Overcome laziness, overwhelm, fear, or distraction
+- Reflect on excuses and give mindset shifts
+- Feel supported, but not coddled
+
+MEMORY:
+Previous goal: "${user.lastGoal || 'none'}"
+Last duration mentioned: "${user.lastDuration || 'none'}"
+
+RULES:
+- Never treat greetings like “hi”, “hello”, or “how are you” as tasks.
+- For stuck/lazy/excuse messages (e.g. “I didn’t feel like doing it”), be strict but encouraging.
+- If they say they’re overwhelmed ➝ break things down.
+- If they skipped a task ➝ ask *why* and help them reset with firm motivation.
+- If confused or vague ➝ ask for clarity with encouragement.
+- If they say a new goal (e.g. “I want to write a book”) ➝ acknowledge it, check if the timeline is realistic, and return intent = "create_checklist".
+- If they ask for career help (e.g. “I don’t know what to do with my life”) ➝ set intent = "career_recommendation".
+- If user gives a vague time like "this evening", assume it may relate to a previously mentioned goal.
+- ALWAYS respond in JSON (no markdown or prose).
+
+Respond in this strict format:
+
+{
+  "messages": ["message 1", "message 2"],
+  "intent": "general | create_checklist | career_recommendation",
+  "goal": "optional goal summary",
+  "duration": "optional duration (e.g. this evening, 2 hours)",
+  "timelineFlag": "ok | too_short | too_long | missing"
 }
+          `.trim(),
+        },
+        { role: 'user', content: prompt },
+      ],
+    });
 
-async function handleMessage(bot, msg) {
-  if (!msg || !msg.from || !msg.from.id) {
-    console.error("❌ Invalid message format received:", msg);
-    return;
-  }
+    const raw = completion.choices[0].message.content.trim();
 
-  const userId = msg.from.id;
-  const chatId = msg.chat.id;
-  const text = msg.text?.trim();
+    let structured;
+    try {
+      structured = JSON.parse(raw);
+    } catch (err) {
+      console.warn('Warning: Could not parse JSON from OpenAI. Raw:', raw);
+      return {
+        messages: [raw],
+        intent: 'general',
+        goal: '',
+        duration: '',
+        timelineFlag: 'missing',
+      };
+    }
 
-  if (!text) {
-    await bot.sendMessage(chatId, "Hmm, I didn’t catch that. Try sending it again.");
-    return;
-  }
+    if (!Array.isArray(structured.messages)) {
+      structured.messages = [String(structured.messages || "I'm here to help.")];
+    }
 
-  try {
-    let user = await getUserByTelegramId(userId);
-    if (!user) {
-      user = await getOrCreateUser(userId);
-    }
-
-    // 🧠 Anti-repetition logic
-    const now = new Date();
-    const lastInteraction = user.lastInteraction || new Date(0);
-    const timeSinceLast = (now - new Date(lastInteraction)) / 1000;
-
-    // Optional: If the user just interacted in < 90 seconds and AI already replied
-    if (timeSinceLast < 90 && user.lastAIQuestion === text) {
-      await bot.sendMessage(chatId, "Looks like you just answered that! Let’s move forward.");
-      return;
-    }
-
-    const hasAccess = await hasAIUsageAccess(user);
-    if (!hasAccess) {
-      await bot.sendMessage(chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
-      return;
-    }
-
-    const model = getModelForUser(user);
-    if (!model) {
-      await bot.sendMessage(chatId, "Your current plan doesn’t support AI access. Upgrade to continue.");
-      return;
-    }
-
-    const aiResponse = await getSmartResponse(text, model, user); // Now passes user memory
-    let replyMessages = [];
-
-    if (Array.isArray(aiResponse)) {
-      replyMessages = aiResponse;
-    } else if (typeof aiResponse === 'string') {
-      replyMessages = [aiResponse];
-    } else if (typeof aiResponse === 'object' && aiResponse.messages) {
-      replyMessages = aiResponse.messages;
-    } else {
-      console.error("⚠️ Unexpected AI reply type:", typeof aiResponse, aiResponse);
-      await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
-      return;
-    }
-
-    if (!replyMessages.length || !replyMessages.some(m => m.trim())) {
-      console.error("⚠️ Empty AI reply:", aiResponse);
-      await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
-      return;
-    }
-
-    for (const part of replyMessages) {
-      if (part.trim()) {
-        await bot.sendMessage(chatId, part.trim());
-        await delay(1000);
-      }
-    }
-
-    await trackAIUsage(user, 'general');
-
-    // ✅ Update interaction memory
-    await updateUserField(userId, {
-      lastInteraction: new Date(),
-      lastAIQuestion: text,
-    });
-
-  } catch (error) {
-    console.error("❌ Error handling message:", error);
-    await bot.sendMessage(chatId, "Something went wrong while processing your message. Please try again.");
-  }
+    return {
+      messages: structured.messages,
+      intent: structured.intent || 'general',
+      goal: structured.goal || '',
+      duration: structured.duration || '',
+      timelineFlag: structured.timelineFlag || 'missing',
+    };
+  } catch (error) {
+    console.error('OpenAI error:', error);
+    return {
+      messages: ["Sorry, I'm currently unable to respond. Please try again later."],
+      intent: 'error',
+      goal: '',
+      duration: '',
+      timelineFlag: 'missing',
+    };
+  }
 }
 
 module.exports = {
-  handleMessage,
+  getSmartResponse,
 };
