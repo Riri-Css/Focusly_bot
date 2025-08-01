@@ -1,8 +1,8 @@
-const { getSmartResponse } = require('./getSmartResponse');
-const { generateChecklist } = require('./generateChecklist');
-const { generateWeeklyChecklist } = require('./generateWeeklyChecklist');
-const { updateUserAIUsage, getUserByTelegramId } = require('./userController');
-const { hasAIUsage, getModelForUser } = require('./subscriptionUtils');
+const { getSmartResponse } = require('../utils/getSmartResponse');
+const { generateChecklist } = require('../utils/generateChecklist');
+const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
+const { updateUserAIUsage, getUserByTelegramId } = require('../controllers/userController');
+const { hasAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const User = require('./models/user');
 
 async function handleMessage(bot, msg) {
