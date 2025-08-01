@@ -87,4 +87,5 @@ Respond in this strict format:
 
 module.exports = {
   getSmartResponse,
+  handleMessage,
 };
