@@ -4,48 +4,46 @@ const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const TelegramBot = require('node-telegram-bot-api');
 const paystackWebhook = require('./routes/paystackWebhook');
-const { handleMessage } = require('./handlers/messageHandlers');
+const messageHandlers = require('./handlers/messageHandlers');
 const subscriptionRoutes = require('./handlers/subscriptionHandlers');
 const { startDailyJobs } = require('./utils/cronJobs');
 const { scheduleCustomReminders } = require('./utils/reminderScheduler');
 
-// === Initialize Express App ===
 const app = express();
 app.use(bodyParser.json());
 
-// === Telegram Bot Setup (Webhook Mode) ===
+// === Telegram Bot Setup (Webhook Mode Only) ===
 const bot = new TelegramBot(process.env.BOT_TOKEN);
 const url = process.env.RENDER_EXTERNAL_URL;
 const port = process.env.PORT || 3000;
 
-// Set Telegram webhook to Render URL
+// Set Webhook
 bot.setWebHook(`${url}/bot${process.env.BOT_TOKEN}`);
 
-// Handle Telegram updates via webhook
+// Webhook endpoint
 app.post(`/bot${process.env.BOT_TOKEN}`, async (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-
-// Handle incoming messages
-bot.on('message', async (msg) => {
   try {
-    console.log("📩 Incoming message:", msg.text);
-    await handleMessage(bot, msg);
+    const message = req.body.message;
+    if (message) {
+      console.log("📩 Incoming message:", message.text);
+      await messageHandlers.handleMessage(bot, message);
+    }
+    res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Error handling message:", err);
+    console.error("❌ Error in webhook handler:", err);
+    res.sendStatus(500);
   }
 });
 
 // === Paystack Webhook ===
 app.use('/paystack/webhook', paystackWebhook);
 
-// === Root route for basic health check ===
+// === Health check ===
 app.get('/', (req, res) => {
-  res.send('🚀 Focusly Telegram bot server is live!');
+  res.send('🚀 Focusly bot server is running');
 });
 
-// === MongoDB Connection and Cron Jobs ===
+// === MongoDB and Cron Setup ===
 (async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
@@ -54,11 +52,11 @@ app.get('/', (req, res) => {
     startDailyJobs(bot);
     scheduleCustomReminders(bot);
   } catch (err) {
-    console.error('❌ MongoDB connection failed:', err);
+    console.error('❌ MongoDB connection error:', err);
   }
 })();
 
-// === Start the Express Server ===
+// === Start Express Server ===
 app.listen(port, () => {
-  console.log(`🌐 Express server running on port ${port}`);
+  console.log(`🌐 Server running on port ${port}`);
 });
