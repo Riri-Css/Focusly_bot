@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const User = require('../models/user');
-const { sendTelegramMessage } = require('./utils/telegram');
+const { sendTelegramMessage } = require('./telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
