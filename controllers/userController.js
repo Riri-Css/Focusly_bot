@@ -121,5 +121,6 @@ module.exports = {
   updateUser,
   hasAIUsageAccess,
   incrementAIUsage,
-  getModelForUser
+  getModelForUser,
+  updateUserField,
 };
