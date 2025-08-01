@@ -2,7 +2,7 @@ const openai = require('../utils/openai');
 const { getUserByTelegramId, updateUserAIUsage } = require('../controllers/userController');
 const { checkAIEligibility } = require('../utils/subscriptionUtils');
 const { generateChecklist } = require('../utils/generateChecklist');
-const { generateWeeklyChecklist } = require('../utils/generateWeeklyChecklist');
+const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
 async function getSmartResponse(prompt, model = 'gpt-4o', user = {}) {
   try {
