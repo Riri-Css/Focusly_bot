@@ -1,4 +1,4 @@
-const openai = require('./openai');
+const openai = require('../utils/openai');
 
 async function getSmartResponse(prompt, model = 'gpt-4o', user = {}) {
   try {
