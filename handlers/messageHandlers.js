@@ -1,5 +1,5 @@
 const { getSmartResponse } = require('../utils/getSmartResponse');
-const { getUserByTelegramId, createOrUpdateUser } = require('../controllers/userController');
+const { getUserByTelegramId, getOrCreateUser } = require('../controllers/userController');
 const {
   hasAIUsageAccess,
   trackAIUsage,
@@ -28,7 +28,7 @@ async function handleMessage(bot, msg) {
   try {
     let user = await getUserByTelegramId(userId);
     if (!user) {
-      user = await createOrUpdateUser(userId, { telegramId: userId });
+      user = await getOrCreateUser(userId);
     }
 
     const hasAccess = await hasAIUsageAccess(user);
