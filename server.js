@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const TelegramBot = require('node-telegram-bot-api');
 const paystackWebhook = require('./routes/paystackWebhook');
-const messageHandlers = require('./handlers/messageHandlers');
+const handleMessage = require('./handlers/messageHandlers');
 const subscriptionRoutes = require('./handlers/subscriptionHandlers');
 const { startDailyJobs } = require('./utils/cronJobs');
 const { scheduleCustomReminders } = require('./utils/reminderScheduler');
@@ -31,7 +31,7 @@ app.post(`/bot${process.env.BOT_TOKEN}`, async (req, res) => {
 bot.on('message', async (msg) => {
   try {
     console.log("📩 Incoming message:", msg.text);
-    await messageHandlers.handleMessage(bot, msg);
+    await handleMessage(bot, msg);
   } catch (err) {
     console.error("❌ Error handling message:", err);
   }
