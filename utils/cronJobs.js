@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const User = require('../models/user');
-//const { sendTelegramMessage } = require('./utils/telegram');
+const { sendTelegramMessage } = require('./utils/telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
@@ -53,14 +53,14 @@ function startDailyJobs(bot) {
     }
   });
 
-  // 🧠 Weekly Checklist Generator – every Monday at 6 AM
-  cron.schedule('0 6 * * 1', async () => {
+  // 🧠 Weekly Checklist Generator – every Monday at 8 AM
+  cron.schedule('0 8 * * 1', async () => {
     try {
       const users = await User.find({ onboarded: true });
       for (const user of users) {
         const access = user.subscription?.status;
         if (access === 'trial' || access === 'basic' || access === 'premium') {
-          await generateWeeklyChecklist(user.telegramId);
+          await generateWeeklyChecklist(user, user.focus || "Your main goal");
         }
       }
     } catch (err) {

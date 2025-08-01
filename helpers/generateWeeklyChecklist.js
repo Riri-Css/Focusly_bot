@@ -1,13 +1,13 @@
 const { getSmartResponse } = require('../utils/openai');
 const {
-  isAIAllowed,
+  hasAIUsageAccess,
   trackAIUsage,
-  getAllowedModelForUser,
+  getModelForUser,
 } = require('../utils/subscriptionUtils');
 
 async function generateWeeklyChecklist(user, goal, tasksLastWeek = []) {
   try {
-    const aiAllowed = isAIAllowed(user);
+    const aiAllowed = hasAIUsageAccess(user, 'checklist');
 
     if (!aiAllowed) {
       return [
@@ -18,7 +18,7 @@ async function generateWeeklyChecklist(user, goal, tasksLastWeek = []) {
       ];
     }
 
-    const model = getAllowedModelForUser(user);
+    const model = getModelForUser(user);
 
     const prompt = `
 You are Focusly, a weekly planning assistant powered by AI.
@@ -34,7 +34,7 @@ Generate a 5-point weekly checklist with short, clear, motivating tasks. Avoid b
       return ["AI failed to generate your weekly checklist. Try again later."];
     }
 
-    await trackAIUsage(user);
+    await trackAIUsage(user, 'checklist');
 
     return aiResponse
       .split('\n')

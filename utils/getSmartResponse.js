@@ -18,22 +18,25 @@ You help users:
 
 RULES:
 - Never treat greetings like “hi”, “hello”, or “how are you” as tasks.
-- For “hi”, respond like: “Hey there — ready to win today?”
+// - For “hi”, respond like: “Hey there, how are you doing? Ready to win today?”
 - For stuck/lazy/excuse messages (e.g. “I didn’t feel like doing it”), be strict but encouraging.
 - If they say they’re overwhelmed ➝ break things down.
 - If they skipped a task ➝ ask *why* and help them reset with firm motivation.
 - If confused or vague ➝ ask for clarity with encouragement.
-- ALWAYS reply with short, motivating, and conversational tone.
-- You can return multiple lines — break your messages into separate parts if helpful.
+- If they say a new goal (e.g. “I want to write a book”) ➝ acknowledge it, check if the timeline is realistic, and return intent = "create_checklist".
+- If they ask for career help (e.g. “I don’t know what to do with my life”) ➝ set intent = "career_recommendation".
+- ALWAYS return plain messages in a motivating tone.
 
-Format your response like this:
+You must respond in this JSON format (no markdown or explanations):
 
-<message>
-<message>
-<message>
-
-Do NOT return bullet points or markdown.
-`.trim(),
+{
+  "messages": ["message 1", "message 2", "..."],
+  "intent": "general | create_checklist | career_recommendation",
+  "goal": "if any goal is mentioned",
+  "duration": "if any duration is mentioned",
+  "timelineFlag": "ok | too_short | too_long | missing"
+}
+            `.trim(),
         },
         { role: 'user', content: prompt },
       ],
@@ -41,16 +44,31 @@ Do NOT return bullet points or markdown.
 
     const raw = completion.choices[0].message.content.trim();
 
-    // Split into array of responses (based on line breaks)
-    const responseArray = raw
-      .split('\n')
-      .map(msg => msg.trim())
-      .filter(Boolean);
+    // Try to parse the structured JSON
+    let structured;
+    try {
+      structured = JSON.parse(raw);
+    } catch (err) {
+      console.warn('Warning: Could not parse JSON from OpenAI. Raw:', raw);
+      // fallback: return it as a single message
+      return {
+        messages: [raw],
+        intent: 'general',
+      };
+    }
 
-    return responseArray;
+    // Validate and sanitize
+    if (!Array.isArray(structured.messages)) {
+      structured.messages = [String(structured.messages || "I'm here to help.")];
+    }
+
+    return structured;
   } catch (error) {
     console.error('OpenAI error:', error);
-    return ["Sorry, I'm currently unable to respond. Please try again later."];
+    return {
+      messages: ["Sorry, I'm currently unable to respond. Please try again later."],
+      intent: 'error',
+    };
   }
 }
 

@@ -1,13 +1,13 @@
 const { getSmartResponse } = require('./openai');
 const {
-  isAIAllowed,
+  hasAIUsageAccess,
   trackAIUsage,
-  getAllowedModelForUser,
+  getModelForUser,
 } = require('./subscriptionUtils');
 
 async function generateChecklist(user, goal, tasksYesterday) {
   try {
-    const aiAllowed = isAIAllowed(user);
+    const aiAllowed = hasAIUsageAccess(user, 'checklist');
 
     if (!aiAllowed) {
       return [
@@ -18,7 +18,7 @@ async function generateChecklist(user, goal, tasksYesterday) {
       ];
     }
 
-    const model = getAllowedModelForUser(user);
+    const model = getModelForUser(user);
 
     const prompt = `
 You are Focusly, a productivity AI assistant. Help the user break down their goal into a checklist.
@@ -35,7 +35,7 @@ Generate a short checklist (3–5 points) for today's focus, personalized and sm
       return ["AI failed to generate checklist. Try again later."];
     }
 
-    await trackAIUsage(user);
+    await trackAIUsage(user, 'checklist');
 
     return aiResponse
       .split('\n')
