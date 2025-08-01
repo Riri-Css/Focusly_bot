@@ -93,11 +93,6 @@ async function handleMessage(bot, msg) {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
 
-if (!allowed) {
-  return bot.sendMessage(chatId, 'Your AI usage limit has been reached. Please subscribe or wait until your quota resets.');
-}
-
-
   const user = await getUserByTelegramId(chatId);
   if (!user) return bot.sendMessage(chatId, 'User not found.');
 
@@ -105,7 +100,9 @@ if (!allowed) {
   const allowed = hasAIUsageAccess(user, 'general');
   const model = getModelForUser(user);
 
-
+  if (!allowed) {
+     return bot.sendMessage(chatId, 'Your AI usage limit has been reached. Please subscribe or wait until your quota resets.');
+  }
   //const { allowed, model, reason } = checkAIEligibility(user);
  // if (!allowed) return bot.sendMessage(chatId, 'Your AI usage limit has been reached. Please subscribe or wait until your quota resets.');
 
