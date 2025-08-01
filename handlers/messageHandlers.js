@@ -43,29 +43,29 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    const aiReplyRaw = await getSmartResponse(text, model);
+    const aiResponse = await getSmartResponse(text, model);
 
-    // ✅ Force reply into valid string
-    let aiReply = '';
-    if (Array.isArray(aiReplyRaw)) {
-      aiReply = aiReplyRaw.filter(r => typeof r === 'string').join('\n\n');
-    } else if (typeof aiReplyRaw === 'string') {
-      aiReply = aiReplyRaw;
+    let replyMessages = [];
+
+    if (Array.isArray(aiResponse)) {
+      replyMessages = aiResponse;
+    } else if (typeof aiResponse === 'string') {
+      replyMessages = [aiResponse];
+    } else if (typeof aiResponse === 'object' && aiResponse.messages) {
+      replyMessages = aiResponse.messages;
     } else {
-      console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
+      console.error("⚠️ Unexpected AI reply type:", typeof aiResponse, aiResponse);
       await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
       return;
     }
 
-    if (!aiReply.trim()) {
-      console.error("⚠️ Empty AI reply:", aiReplyRaw);
+    if (!replyMessages.length || !replyMessages.some(m => m.trim())) {
+      console.error("⚠️ Empty AI reply:", aiResponse);
       await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
       return;
     }
 
-    // Split and send in chunks
-    const replyParts = aiReply.split('\n\n');
-    for (const part of replyParts) {
+    for (const part of replyMessages) {
       if (part.trim()) {
         await bot.sendMessage(chatId, part.trim());
         await delay(1000);
