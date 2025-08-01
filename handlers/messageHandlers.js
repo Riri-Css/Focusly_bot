@@ -1,5 +1,5 @@
 const { getSmartResponse } = require('../utils/getSmartResponse');
-const { getUserByTelegramId, getOrCreateUser } = require('../controllers/userController');
+const { getUserByTelegramId, getOrCreateUser, updateUserField } = require('../controllers/userController');
 const {
   hasAIUsageAccess,
   trackAIUsage,
@@ -31,6 +31,17 @@ async function handleMessage(bot, msg) {
       user = await getOrCreateUser(userId);
     }
 
+    // 🧠 Anti-repetition logic
+    const now = new Date();
+    const lastInteraction = user.lastInteraction || new Date(0);
+    const timeSinceLast = (now - new Date(lastInteraction)) / 1000;
+
+    // Optional: If the user just interacted in < 90 seconds and AI already replied
+    if (timeSinceLast < 90 && user.lastAIQuestion === text) {
+      await bot.sendMessage(chatId, "Looks like you just answered that! Let’s move forward.");
+      return;
+    }
+
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
       await bot.sendMessage(chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
@@ -43,8 +54,7 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    const aiResponse = await getSmartResponse(text, model);
-
+    const aiResponse = await getSmartResponse(text, model, user); // Now passes user memory
     let replyMessages = [];
 
     if (Array.isArray(aiResponse)) {
@@ -73,6 +83,12 @@ async function handleMessage(bot, msg) {
     }
 
     await trackAIUsage(user, 'general');
+
+    // ✅ Update interaction memory
+    await updateUserField(userId, {
+      lastInteraction: new Date(),
+      lastAIQuestion: text,
+    });
 
   } catch (error) {
     console.error("❌ Error handling message:", error);
