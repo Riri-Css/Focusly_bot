@@ -1,6 +1,6 @@
 const openai = require('../utils/openai');
 const { getUserByTelegramId, updateUserAIUsage } = require('../controllers/userController');
-const { checkAIEligibility } = require('../utils/subscriptionUtils');
+const { hasAIUsageAccess, getModelForUser, trackAIUsage } = require('../utils/subscriptionUtils');
 const { generateChecklist } = require('../utils/generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
@@ -94,12 +94,19 @@ async function handleMessage(bot, msg) {
   const text = msg.text?.trim();
 
   if (!text) return;
+  const allowed = hasAIUsageAccess(user, 'general');
+const model = getModelForUser(user);
+
+if (!allowed) {
+  return bot.sendMessage(chatId, 'Your AI usage limit has been reached. Please subscribe or wait until your quota resets.');
+}
+
 
   const user = await getUserByTelegramId(chatId);
   if (!user) return bot.sendMessage(chatId, 'User not found.');
 
-  const { allowed, model, reason } = checkAIEligibility(user);
-  if (!allowed) return bot.sendMessage(chatId, reason);
+  //const { allowed, model, reason } = checkAIEligibility(user);
+ // if (!allowed) return bot.sendMessage(chatId, 'Your AI usage limit has been reached. Please subscribe or wait until your quota resets.');
 
   const { messages, intent, goal, duration } = await getSmartResponse(text, model, user);
 
