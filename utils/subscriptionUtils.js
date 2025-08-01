@@ -61,4 +61,6 @@ module.exports = {
   isTrialExpired,
   hasActiveSubscription,
   getUserPlan,
+  checkAIEligibility: canAccessAI,
+  getUserPlan,
 };
