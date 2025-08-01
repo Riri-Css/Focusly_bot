@@ -2,7 +2,7 @@ const User = require('../models/user');
 const getSmartResponse = require('../utils/getSmartResponse');
 const { checkAIEligibility, getModelForUser } = require('../utils/subscriptionUtils');
 const { updateUserAIUsage } = require('../controllers/userController');
-const generateChecklist = require('../helpers/generateChecklist');
+const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
 
 
