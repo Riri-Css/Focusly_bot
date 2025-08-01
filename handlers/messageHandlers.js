@@ -3,7 +3,7 @@ const { generateChecklist } = require('../utils/generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 const { updateUserAIUsage, getUserByTelegramId } = require('../controllers/userController');
 const { hasAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
-const User = require('./models/user');
+const User = require('../models/user');
 
 async function handleMessage(bot, msg) {
   const chatId = msg.chat.id;
