@@ -4,7 +4,7 @@ async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
  // console.log(" Calling AI for:", message);
   try {
 
-    const memory = getUserMemory(userId);
+    const memory = await getUserMemory(userId);
     const goal = memory.goalMemory?.text || 'No specific goal provided';
     const recent = memory.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
     const prompt = `
