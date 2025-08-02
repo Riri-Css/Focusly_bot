@@ -4,6 +4,9 @@ async function getSmartResponse(prompt, model = 'gpt-4o') {
  // console.log(" Calling AI for:", message);
   try {
 
+    const memory = getUserMemory(userId);
+    const goal = memory.goalMemory?.text || 'No specific goal provided';
+    const recent = memory.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
     const prompt = `
     You are Focusly, a strict yet supportive accountability coach. Be concise, helpful,  and clear.
     This user's goal is: "${goal}"
@@ -12,10 +15,8 @@ async function getSmartResponse(prompt, model = 'gpt-4o') {
     User just said: "${userInput}"
     Respond with a direct message relevent to the user's message that guides or challenges them appropriately.`;
 
-    const memory = getUserMemory(prompt.userId);
-    const goal = memory.goalMemory?.text || 'No specific goal provided';
-    const recent = memory.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
     
+
     const completion = await openai.chat.completions.create({
       model,
       messages: [
