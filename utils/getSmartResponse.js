@@ -58,6 +58,11 @@ Respond in this strict format:
     });
 
     const raw = completion.choices[0].message.content.trim();
+    const clean = raw
+      .replace(/^```json/, '')
+      .replace(/^```/, '')
+      .replace(/```$/, '')
+      .trim();
 
     let structured;
     try {
