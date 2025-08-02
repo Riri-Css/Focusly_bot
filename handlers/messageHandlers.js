@@ -88,31 +88,24 @@ async function handleMessage(bot, msg) {
 
 
 
-    const aiReplyRaw = await getSmartResponse(text, model);
+    // ✅ Extract message(s) from smart AI response
+let aiReply = '';
 
+if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
+  aiReply = aiReplyRaw.messages.filter(m => typeof m === 'string').join('\n\n');
+} else if (typeof aiReplyRaw === 'string') {
+  aiReply = aiReplyRaw;
+} else {
+  console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
+  await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
+  return;
+}
 
+// ✅ Send the AI reply
+if (aiReply) {
+  await bot.sendMessage(chatId, aiReply);
+}
 
-    // ✅ Force reply into valid string
-
-    let aiReply = '';
-
-    if (Array.isArray(aiReplyRaw)) {
-
-      aiReply = aiReplyRaw.filter(r => typeof r === 'string').join('\n\n');
-
-    } else if (typeof aiReplyRaw === 'string') {
-
-      aiReply = aiReplyRaw;
-
-    } else {
-
-      console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
-
-      await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
-
-      return;
-
-    }
 
 
 
