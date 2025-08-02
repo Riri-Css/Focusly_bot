@@ -87,7 +87,7 @@ async function handleMessage(bot, msg) {
 
 
     // ✅ Extract message(s) from smart AI response
-  const aiReplyRaw = await getSmartResponse(text, model);
+  const aiReplyRaw = await getSmartResponse(userId, text, userInput, model);
   let aiReply = '';
 
   if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
