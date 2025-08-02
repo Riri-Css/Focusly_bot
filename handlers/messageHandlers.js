@@ -12,7 +12,7 @@ const {
 
 } = require('../utils/subscriptionUtils');
 
-
+const { addGoalMemory, addRecentChat } = require('../utils/storage');
 
 function delay(ms) {
 
@@ -32,6 +32,12 @@ async function handleMessage(bot, msg) {
 
   }
 
+  await addRecentChat(userId, text);
+
+// Optional: If the message is a goal-setting message, save it
+if (text.toLowerCase().includes('my goal is')) {
+  await addGoalMemory(userId, text);
+}
 
 
   const userId = msg.from.id;
