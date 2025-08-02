@@ -1,6 +1,6 @@
 const openai = require('./openai');
 const { getUserMemory } = require('./storage');
-async function getSmartResponse(prompt, model = 'gpt-4o') {
+async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
  // console.log(" Calling AI for:", message);
   try {
 
