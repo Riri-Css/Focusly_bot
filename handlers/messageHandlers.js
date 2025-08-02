@@ -89,17 +89,18 @@ async function handleMessage(bot, msg) {
 
 
     // ✅ Extract message(s) from smart AI response
-let aiReply = '';
+  const aiReplyRaw = await getSmartResponse(text, model);
+  let aiReply = '';
 
-if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
+  if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
   aiReply = aiReplyRaw.messages.filter(m => typeof m === 'string').join('\n\n');
-} else if (typeof aiReplyRaw === 'string') {
+  } else if (typeof aiReplyRaw === 'string') {
   aiReply = aiReplyRaw;
-} else {
+  } else {
   console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
   await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
   return;
-}
+  }
 
 // ✅ Send the AI reply
 if (aiReply) {
