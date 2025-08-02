@@ -1,11 +1,14 @@
 const User = require('../models/user');
 const getSmartResponse = require('../utils/getSmartResponse');
-const { hasAIAUsageAccess, getModelForUser } = require('../utils/subscriptionUtils');
+const { hasAIAUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { updateUserAIUsage } = require('../controllers/userController');
 const generateChecklist = require('../utils/generateChecklist');
 const generateWeeklyChecklist = require('../helpers/generateWeeklyChecklist');
+const { getUserByTelgramId, getOrCreateUser } = require('../controllers/userController');
 
-
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 const handleMessage = async (bot, msg) => {
   const chatId = msg.chat.id;
   const message = msg.text?.trim();
@@ -117,6 +120,8 @@ const handleMessage = async (bot, msg) => {
     }
 
     // Fallback: AI-enhanced reply or default
+    console.log("Message received:", message.text);
+    console.log("Checking user access...");
     try {
       const { allowed } = await hasAIUsageAccess(user);
       if (allowed) {
