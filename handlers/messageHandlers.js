@@ -32,14 +32,6 @@ async function handleMessage(bot, msg) {
 
   }
 
-  await addRecentChat(userId, text);
-
-// Optional: If the message is a goal-setting message, save it
-if (text.toLowerCase().includes('my goal is')) {
-  await addGoalMemory(userId, text);
-}
-
-
   const userId = msg.from.id;
 
   const chatId = msg.chat.id;
@@ -108,6 +100,12 @@ if (text.toLowerCase().includes('my goal is')) {
   return;
   }
 
+  await addRecentChat(userId, text);
+
+// Optional: If the message is a goal-setting message, save it
+if (text.toLowerCase().includes('my goal is')) {
+  await addGoalMemory(userId, text);
+}
 // ✅ Send the AI reply
 //if (aiReply) {
   //await bot.sendMessage(chatId, aiReply);
