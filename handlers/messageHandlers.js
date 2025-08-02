@@ -85,7 +85,7 @@ async function handleMessage(bot, msg) {
     }
 
 
-
+    const userInput = msg.text?.trim();
     // ✅ Extract message(s) from smart AI response
   const aiReplyRaw = await getSmartResponse(userId, text, userInput, model);
   let aiReply = '';
