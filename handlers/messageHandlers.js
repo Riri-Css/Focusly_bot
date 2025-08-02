@@ -103,22 +103,22 @@ async function handleMessage(bot, msg) {
   }
 
 // ✅ Send the AI reply
-if (aiReply) {
-  await bot.sendMessage(chatId, aiReply);
+//if (aiReply) {
+  //await bot.sendMessage(chatId, aiReply);
+//}
+
+
+
+
+if (!aiReply.trim()) {
+
+  console.error("⚠️ Empty AI reply:", aiReplyRaw);
+
+  await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
+
+  return;
+
 }
-
-
-
-
-    if (!aiReply.trim()) {
-
-      console.error("⚠️ Empty AI reply:", aiReplyRaw);
-
-      await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
-
-      return;
-
-    }
 
 
 
