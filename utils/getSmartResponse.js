@@ -65,7 +65,7 @@ Respond in this strict format:
     }
 
     return {
-      messages: structured.messages,
+      messages: structured.messages.map(msg => String(msg)),
       intent: structured.intent || 'general',
       goal: structured.goal || '',
       duration: structured.duration || '',
