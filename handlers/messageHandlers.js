@@ -26,7 +26,7 @@ async function handleMessage(bot, msg) {
 
   const chatId = msg.chat.id;
 
-  const text = msg.text?.trim();
+  const userInput = msg.text?.trim();
 
 
 
@@ -64,7 +64,7 @@ async function handleMessage(bot, msg) {
 
 
 
-    //const model = await getModelForUser(user);
+    const model = await getModelForUser(user);
 
     if (!model) {
 
@@ -76,7 +76,7 @@ async function handleMessage(bot, msg) {
 
 
     //const userInput = msg.text?.trim();
-    const model = await getAvailableModel(user);
+    //const model = await getAvailableModel(user);
 
     // ✅ Extract message(s) from smart AI response
   const aiReplyRaw = await getSmartResponse(userId, userInput, model);
