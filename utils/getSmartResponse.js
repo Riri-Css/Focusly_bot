@@ -66,9 +66,9 @@ Respond in this strict format:
 
     let structured;
     try {
-      structured = JSON.parse(raw);
+      structured = JSON.parse(clean);
     } catch (err) {
-      console.warn('Warning: Could not parse JSON from OpenAI. Raw:', raw);
+      console.warn('Warning: Could not parse JSON from OpenAI. Raw:', clean);
       return {
         messages: [raw],
         intent: 'general',
