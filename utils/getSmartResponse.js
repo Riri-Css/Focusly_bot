@@ -103,6 +103,18 @@ Respond in this strict format:
     const systemPrompt = StrictMode
       ? "You're Focusly, a very strict coach. Be brutally honest, call out laziness, and push for action. Example: 'No more excuses, just do it! Or stop pretending you care or want a change.'"
       : "You're Focusly, a helpful accountability partner. Push users and help them stay accountable with a supportive tone.";
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userInput },
+      ];
+
+      const completion = await openai.chat.completions.create({
+        model,
+        messages,
+      });
+
+      return completion.choices[0].message.content;
   }
 }
 

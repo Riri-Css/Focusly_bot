@@ -81,12 +81,14 @@ async function handleMessage(bot, msg) {
 
     // ✅ Extract message(s) from smart AI response
   const aiReplyRaw = await getSmartResponse(userId, userInput, model);
+  const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
+  const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
   let aiReply = '';
 
-  if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
-  aiReply = aiReplyRaw.messages.filter(m => typeof m === 'string').join('\n\n');
-  } else if (typeof aiReplyRaw === 'string') {
-  aiReply = aiReplyRaw;
+  if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
+    aiReply = aiReplyMessages.filter(m => typeof m === 'string').join('\n\n');
+  } else if (typeof aiReplyMessages === 'string') {
+    aiReply = aiReplyMessages;
   } else {
   console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
   await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
