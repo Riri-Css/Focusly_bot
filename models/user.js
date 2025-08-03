@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
     default: Date.now,
     expires: '180d', // Automatically remove users after 6 months
   },
+  missedCheckins: { type: Number, default: 0 },
 });
 
 module.exports = mongoose.model('User', userSchema);

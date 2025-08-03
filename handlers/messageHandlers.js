@@ -9,6 +9,7 @@ const {
 } = require('../utils/subscriptionUtils');
 
 const { addGoalMemory, addRecentChat } = require('../utils/storage');
+const user = require('../models/user');
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -145,6 +146,10 @@ if (!aiReply.trim()) {
     await bot.sendMessage(chatId, "Something went wrong while processing your message. Please try again.");
 
   }
+  user.lastCheckinDate = new Date().toISOString().split('T')[0]; // Update last check-in date
+  user.streak += 1; // Increment streak
+  user.missedCheckins = 0; // Reset missed check-ins
+  await user.save(); // Save the updated user data
 
 }
 

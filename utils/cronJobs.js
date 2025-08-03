@@ -78,6 +78,11 @@ function startDailyJobs(bot) {
         if (lastChecklist && new Date(lastChecklist.date).toDateString() === today && !lastChecklist.checkedIn) {
           await sendTelegramMessage(user.telegramId, "It’s 9PM! Time to check in. How did you do with your tasks today?");
         }
+        if (!hasCheckedInToday && user.dailyTasks?.length) {
+          await sendTelegramMessage(user.telegramId, "Hey! You haven't checked in today. Please let me know how your day went.");
+          user.missedCheckIns = (user.missedCheckIns || 0) + 1;
+          await user.save();
+        }
       }
     } catch (err) {
       console.error('9PM cron error:', err.message);
