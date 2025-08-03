@@ -75,8 +75,7 @@ async function handleMessage(bot, msg) {
 
     }
 
-    const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
-  const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
+  
     //const userInput = msg.text?.trim();
     //const model = await getAvailableModel(user);
 
