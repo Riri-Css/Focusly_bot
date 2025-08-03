@@ -1,4 +1,4 @@
-const { StrictMode } = require('react');
+
 const openai = require('./openai');
 const { getUserMemory } = require('./storage');
 async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
