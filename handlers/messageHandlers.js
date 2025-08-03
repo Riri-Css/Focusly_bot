@@ -3,33 +3,23 @@ const { getSmartResponse } = require('../utils/getSmartResponse');
 const { getUserByTelegramId, getOrCreateUser } = require('../controllers/userController');
 
 const {
-
   hasAIUsageAccess,
-
   trackAIUsage,
-
   getModelForUser,
-
 } = require('../utils/subscriptionUtils');
 
 const { addGoalMemory, addRecentChat } = require('../utils/storage');
 
 function delay(ms) {
-
   return new Promise(resolve => setTimeout(resolve, ms));
-
 }
-
-
 
 async function handleMessage(bot, msg) {
 
   if (!msg || !msg.from || !msg.from.id) {
 
     console.error("❌ Invalid message format received:", msg);
-
     return;
-
   }
 
   const userId = msg.from.id;
@@ -40,7 +30,7 @@ async function handleMessage(bot, msg) {
 
 
 
-  if (!text) {
+  if (!userInput) {
 
     await bot.sendMessage(chatId, "Hmm, I didn’t catch that. Try sending it again.");
 
@@ -74,7 +64,7 @@ async function handleMessage(bot, msg) {
 
 
 
-    const model = getModelForUser(user);
+    //const model = await getModelForUser(user);
 
     if (!model) {
 
@@ -85,9 +75,11 @@ async function handleMessage(bot, msg) {
     }
 
 
-    const userInput = msg.text?.trim();
+    //const userInput = msg.text?.trim();
+    const model = await getAvailableModel(user);
+
     // ✅ Extract message(s) from smart AI response
-  const aiReplyRaw = await getSmartResponse(userId, text, userInput, model);
+  const aiReplyRaw = await getSmartResponse(userId, userInput, model);
   let aiReply = '';
 
   if (aiReplyRaw && Array.isArray(aiReplyRaw.messages)) {
@@ -100,11 +92,11 @@ async function handleMessage(bot, msg) {
   return;
   }
 
-  await addRecentChat(userId, text);
+  await addRecentChat(userId, userInput);
 
 // Optional: If the message is a goal-setting message, save it
-if (text.toLowerCase().includes('my goal is')) {
-  await addGoalMemory(userId, text);
+if (userInput.toLowerCase().includes('my goal is')) {
+  await addGoalMemory(userId, userInput);
 }
 // ✅ Send the AI reply
 //if (aiReply) {
@@ -145,8 +137,6 @@ if (!aiReply.trim()) {
 
 
     await trackAIUsage(user, 'general');
-
-
 
   } catch (error) {
 
