@@ -75,49 +75,47 @@ async function handleMessage(bot, msg) {
 
     }
 
-
+    const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
+  const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
     //const userInput = msg.text?.trim();
     //const model = await getAvailableModel(user);
 
     // ✅ Extract message(s) from smart AI response
-  const aiReplyRaw = await getSmartResponse(userId, userInput, model);
-  const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
-  const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
-  let aiReply = '';
+    const aiReplyRaw = await getSmartResponse(userId, userInput, model);
+    const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
+    const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
+    let aiReply = '';
 
-  if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
-    aiReply = aiReplyMessages.filter(m => typeof m === 'string').join('\n\n');
-  } else if (typeof aiReplyMessages === 'string') {
+    if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
+      aiReply = aiReplyMessages.filter(m => typeof m === 'string').join('\n\n');
+    } else if (typeof aiReplyMessages === 'string') {
     aiReply = aiReplyMessages;
-  } else {
-  console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
-  await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
-  return;
-  }
+    } else {
+   console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
+   await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
+   return;
+    }
 
-  await addRecentChat(userId, userInput);
+    await addRecentChat(userId, userInput);
 
-// Optional: If the message is a goal-setting message, save it
-if (userInput.toLowerCase().includes('my goal is')) {
-  await addGoalMemory(userId, userInput);
-}
-// ✅ Send the AI reply
-//if (aiReply) {
-  //await bot.sendMessage(chatId, aiReply);
-//}
+    // Optional: If the message is a goal-setting message, save it
+    if (userInput.toLowerCase().includes('my goal is')) {
+    await addGoalMemory(userId, userInput);
+    }
+    // ✅ Send the AI reply
+    if (aiReply) {
+    await bot.sendMessage(chatId, aiReply);
+    }
 
+    if (!aiReply.trim()) {
 
+    console.error("⚠️ Empty AI reply:", aiReplyRaw);
 
+    await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
 
-if (!aiReply.trim()) {
+    return;
 
-  console.error("⚠️ Empty AI reply:", aiReplyRaw);
-
-  await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
-
-  return;
-
-}
+    }
 
 
 
@@ -140,19 +138,23 @@ if (!aiReply.trim()) {
 
 
     await trackAIUsage(user, 'general');
+    
+    user.lastCheckinDate = new Date().toISOString().split('T')[0]; // Update last check-in date
+    user.streak += 1; // Increment streak
+    user.missedCheckins = 0; // Reset missed check-ins
+    await user.save(); // Save the updated user data
 
-  } catch (error) {
+
+  }
+
+  catch (error) {
 
     console.error("❌ Error handling message:", error);
 
     await bot.sendMessage(chatId, "Something went wrong while processing your message. Please try again.");
 
   }
-  user.lastCheckinDate = new Date().toISOString().split('T')[0]; // Update last check-in date
-  user.streak += 1; // Increment streak
-  user.missedCheckins = 0; // Reset missed check-ins
-  await user.save(); // Save the updated user data
-
+  
 }
 
 
