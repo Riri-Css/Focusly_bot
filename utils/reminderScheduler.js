@@ -40,5 +40,6 @@ async function scheduleCustomReminders(bot) {
     console.error('Reminder scheduling error:', err.message);
   }
 }
+require('./cronJobs');
 
 module.exports = { scheduleCustomReminders };
