@@ -5,6 +5,10 @@ const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 
 function startDailyJobs(bot) {
+
+  cron.schedule('* * * * *', async () => {
+    console.log('Test cron job running every minute');
+  });
   // ⏰ 8 AM Daily Reminder: For users who haven't submitted tasks
   cron.schedule('0 8 * * *', async () => {
     try {
