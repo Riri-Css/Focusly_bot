@@ -1,5 +1,5 @@
 const User = require('../models/user');
-const { sendTelegramMessage } = require('./utils/telegram');
+const { sendTelegramMessage } = require('./telegram');
 
 // Function to schedule individual reminders dynamically
 async function scheduleCustomReminders(bot) {
