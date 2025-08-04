@@ -80,7 +80,7 @@ async function handleMessage(bot, msg) {
     //const model = await getAvailableModel(user);
 
     // ✅ Extract message(s) from smart AI response
-    const aiReplyRaw = await getSmartResponse(userId, userInput, model);
+    //const aiReplyRaw = await getSmartResponse(userId, userInput, model);
     const StrictMode = user.missedCheckins >= 3; // Enable strict mode after 3 missed check-ins
     const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
     let aiReply = '';
