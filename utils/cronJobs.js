@@ -10,7 +10,7 @@ function startDailyJobs(bot) {
   
   cron.schedule('* * * * *', async () => {
     console.log('Test cron job running every minute');
-    const testChatId = ' 1158579580';
+    const testChatId = '1158579580';
   });
   // ⏰ 8 AM Daily Reminder: For users who haven't submitted tasks
   cron.schedule('0 8 * * *', async () => {
