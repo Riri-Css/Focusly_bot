@@ -23,7 +23,7 @@ function startDailyJobs(bot) {
   });
 
   // ⏰ 12 PM Reminder: If no tasks submitted yet
-  cron.schedule('0 9 * * *', async () => {
+  cron.schedule('0 12 * * *', async () => {
     try {
       const users = await User.find({ onboarded: true });
       for (const user of users) {
@@ -38,7 +38,7 @@ function startDailyJobs(bot) {
     }
   });
 
-  cron.schedule('0 15 * * *', async () => {
+  cron.schedule('0 15 10 * *', async () => {
     try {
       const users = await User.find({ onboarded: true });
       for (const user of users) {
@@ -75,6 +75,7 @@ function startDailyJobs(bot) {
       for (const user of users) {
         const today = new Date().toDateString();
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
+        const hasCheckedInToday = lastChecklist && new Date(lastChecklist.date).toDateString() === today && lastChecklist.checkedIn;
         if (lastChecklist && new Date(lastChecklist.date).toDateString() === today && !lastChecklist.checkedIn) {
           await sendTelegramMessage(user.telegramId, "It’s 9PM! Time to check in. How did you do with your tasks today?");
         }
