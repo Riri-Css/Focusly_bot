@@ -102,9 +102,9 @@ async function handleMessage(bot, msg) {
     await addGoalMemory(userId, userInput);
     }
     // ✅ Send the AI reply
-    if (aiReply) {
-    await bot.sendMessage(chatId, aiReply);
-    }
+    //if (aiReply) {
+    //await bot.sendMessage(chatId, aiReply);
+   // }
 
     if (!aiReply.trim()) {
 
