@@ -3,7 +3,7 @@ const User = require('../models/user');
 const { sendTelegramMessage } = require('./telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
-const { bot } = require('../server.js');
+const { bot } = require('../server');
 
 function startDailyJobs(bot) {
 

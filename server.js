@@ -60,3 +60,5 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
   console.log(`🌐 Server running on port ${port}`);
 });
+
+module.exports = { bot }; // Export bot for use in cron jobs
