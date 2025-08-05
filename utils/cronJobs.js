@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('./telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 const { bot } = require('../server');
-
+const { getModelForUser } = require('../subscriptionUtils');
 function startDailyJobs(bot) {
 
   
@@ -18,6 +18,8 @@ function startDailyJobs(bot) {
     try {
       const users = await User.find({ onboarded: true, hasActiveChecklist: false });
       for (const user of users) {
+        const model = await getModelForUser(user);
+        await generateChecklist(user, 'Give me a checklist for today', model);
         const today = new Date().toDateString();
         if (!user.subscribed || !user.dailyTasks || user.dailyTasks.length === 0) continue;
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
@@ -46,7 +48,7 @@ function startDailyJobs(bot) {
     }
   });
 
-  cron.schedule('0 15 10 * *', async () => {
+  cron.schedule('0 15 * * *', async () => {
     try {
       const users = await User.find({ onboarded: true });
       for (const user of users) {
