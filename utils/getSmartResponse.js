@@ -1,23 +1,23 @@
-
-const { response } = require('express');
+// File: src/utils/getSmartResponse.js
+// We no longer need to import `storage.js` since we're using Mongoose
 const openai = require('./openai');
-const { getUserMemory } = require('./storage');
-async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
- // console.log(" Calling AI for:", message);
-  try {
 
-    const memory = await getUserMemory(userId);
-    const goal = memory.goalMemory?.text || 'No specific goal provided';
-    const recent = memory.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
+async function getSmartResponse(user, userInput, model = 'gpt-4o') {
+  // IMPORTANT: This function now expects the `user` object to be passed in,
+  // not just the userId. This is more efficient.
+  try {
+    const goal = user.goalMemory?.text || 'No specific goal provided';
+    
+    // We now get recent chats from the user object, which is from the database.
+    const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
+    
     const prompt = `
-    You are Focusly, a strict yet supportive accountability coach. Be concise, helpful,  and clear.
+    You are Focusly, a strict yet supportive accountability coach. Be concise, helpful, and clear.
     This user's goal is: "${goal}"
     Recent conversation:
     ${recent}"
     User just said: "${userInput}"
     Respond with a direct message relevent to the user's message that guides or challenges them appropriately.`;
-
-    
 
     const completion = await openai.chat.completions.create({
       model,
@@ -37,7 +37,7 @@ You help users:
 RULES:
 - Never treat greetings like “hi”, “hello”, or “how are you” as tasks.
 - For stuck/lazy/excuse messages (e.g. “I didn’t feel like doing it”), be strict but encouraging.
-- If they say they’re overwhelmed ➝ break things down.
+- If they’re overwhelmed ➝ break things down.
 - If they skipped a task ➝ ask *why* and help them reset with firm motivation.
 - If confused or vague ➝ ask for clarity with encouragement.
 - If they say a new goal (e.g. “I want to write a book”) ➝ acknowledge it, check if the timeline is realistic, and return intent = "create_checklist".
@@ -61,35 +61,27 @@ Respond in this strict format:
     });
 
     const raw = completion.choices[0].message.content.trim();
-    const clean = raw
-      //.replace(/^```json/, '')
-      //.replace(/^```/, '')
-      //.replace(/```$/, '')
-      //.trim();
 
     let structured;
     try {
       structured = JSON.parse(raw);
     } catch (err) {
-        console.warn('Warning: Clean JSON parse failed. Attempting fallback. Raw:', raw);
-        const jsonMatch = raw.match(/```json\n?([\s\S]*)\n?```|{([\s\S]*)}/);
-        if (jsonMatch) {
-          const jsonString = `{${jsonMatch[1] || jsonMatch[2]}}`;
-          structured = JSON.parse(jsonString);
-        } 
-        else {
-          // If even the fallback fails, return a default structured response
-          console.error('Fatal: Fallback JSON extraction failed. Raw:', raw);
-          return {
-           messages: [raw],
-            intent: 'general',
-            goal: '',
-            duration: '',
-            timelineFlag: 'missing',
-          };
-        }
+      console.warn('Warning: JSON parse failed. Attempting fallback. Raw:', raw);
+      const jsonMatch = raw.match(/```json\n?([\s\S]*)\n?```|{([\s\S]*)}/);
+      if (jsonMatch) {
+        const jsonString = `{${jsonMatch[1] || jsonMatch[2]}}`;
+        structured = JSON.parse(jsonString);
+      } else {
+        console.error('Fatal: Fallback JSON extraction failed. Raw:', raw);
+        return {
+          messages: [raw],
+          intent: 'general',
+          goal: '',
+          duration: '',
+          timelineFlag: 'missing',
+        };
       }
-    // Ensure response is properly shaped
+    }
     if (!Array.isArray(structured.messages)) {
       structured.messages = [String(structured.messages || "I'm here to help.")];
     }
@@ -110,22 +102,6 @@ Respond in this strict format:
       duration: '',
       timelineFlag: 'missing',
     };
-    
-    const systemPrompt = StrictMode
-      ? "You're Focusly, a very strict coach. Be brutally honest, call out laziness, and push for action. Example: 'No more excuses, just do it! Or stop pretending you care or want a change.'"
-      : "You're Focusly, a helpful accountability partner. Push users and help them stay accountable with a supportive tone.";
-
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userInput },
-      ];
-
-      const completion = await openai.chat.completions.create({
-        model,
-        messages,
-      });
-
-      return completion.choices[0].message.content;
   }
 }
 
