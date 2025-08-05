@@ -4,7 +4,7 @@ const { sendTelegramMessage } = require('./telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { generateWeeklyChecklist } = require('../helpers/generateWeeklyChecklist');
 const { bot } = require('../server');
-const { getModelForUser } = require('../subscriptionUtils');
+const { getModelForUser } = require('../utils/subscriptionUtils');
 function startDailyJobs(bot) {
 
   
