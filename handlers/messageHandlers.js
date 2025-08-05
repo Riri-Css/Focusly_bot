@@ -4,8 +4,8 @@ const {
   getUserByTelegramId, 
   getOrCreateUser, 
   addGoalMemory, 
-  addRecentChat, // New function for short-term memory
-  addImportantMemory // New function for long-term memory
+  addRecentChat, 
+  addImportantMemory 
 } = require('../controllers/userController'); 
 const {
   hasAIUsageAccess,
@@ -47,7 +47,6 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // --- NEW: Handle the /remember command before anything else ---
     if (userInput.startsWith('/remember')) {
       const textToRemember = userInput.replace('/remember', '').trim();
       if (textToRemember) {
@@ -56,15 +55,14 @@ async function handleMessage(bot, msg) {
       } else {
         await bot.sendMessage(chatId, "What should I remember? Use the command like this: /remember [your important note]");
       }
-      return; // Stop processing to avoid AI call
+      return;
     }
     
-    // --- NEW: Add the current message to recent chat history ---
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
-    // --- IMPORTANT FIX: Passing the entire `user` object to getSmartResponse ---
-    const { messages: aiReplyMessages } = await getSmartResponse(user, userInput, model, StrictMode);
+    // --- IMPORTANT: Now destructuring `intent` and `goal` from the AI's response ---
+    const { messages: aiReplyMessages, intent, goal } = await getSmartResponse(user, userInput, model, StrictMode);
     
     let aiReply = '';
     if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
@@ -76,10 +74,10 @@ async function handleMessage(bot, msg) {
       await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
       return;
     }
-    
-    // --- Existing logic for saving a goal ---
-    if (userInput.toLowerCase().includes('my goal is')) {
-      await addGoalMemory(user, userInput);
+
+    // --- NEW: Using AI-detected intent to save the goal ---
+    if (intent === 'create_checklist' && goal) {
+      await addGoalMemory(user, goal);
       await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
     }
     
@@ -97,8 +95,7 @@ async function handleMessage(bot, msg) {
       }
     }
     await trackAIUsage(user, 'general');
-
-    // --- REMOVED: Redundant user.save() call. It is handled by the new controller functions. ---
+    
   } catch (error) {
     console.error("❌ Error handling message:", error);
     await bot.sendMessage(chatId, "Something went wrong while processing your message. Please try again.");
