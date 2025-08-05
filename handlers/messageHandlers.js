@@ -61,7 +61,6 @@ async function handleMessage(bot, msg) {
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
-    // --- IMPORTANT: Now destructuring `intent` and `goal` from the AI's response ---
     const { messages: aiReplyMessages, intent, goal } = await getSmartResponse(user, userInput, model, StrictMode);
     
     let aiReply = '';
@@ -75,10 +74,12 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // --- NEW: Using AI-detected intent to save the goal ---
+    // --- FINAL FIX: Only send the message if a new goal was actually saved ---
     if (intent === 'create_checklist' && goal) {
-      await addGoalMemory(user, goal);
-      await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
+      const goalSaved = await addGoalMemory(user, goal);
+      if (goalSaved) {
+        await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
+      }
     }
     
     if (!aiReply.trim()) {

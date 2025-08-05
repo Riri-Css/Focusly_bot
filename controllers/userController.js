@@ -1,5 +1,4 @@
 // File: src/controllers/userController.js
-
 const User = require('../models/user');
 const { getCurrentModelForUser } = require('../utils/subscriptionUtils');
 
@@ -12,7 +11,7 @@ async function getOrCreateUser(telegramId, username) {
       telegramId,
       username,
       onboardingStep: 'start',
-      tasks: [], // Kept as requested
+      tasks: [],
       streak: 0,
       lastCheckInDate: null,
       trialStartDate: new Date(),
@@ -139,21 +138,23 @@ async function getModelForUser(user) {
   return getCurrentModelForUser(user);
 }
 
-// --- NEW MEMORY-RELATED FUNCTIONS ---
-
+// --- CORRECTED addGoalMemory function to return a boolean ---
 async function addGoalMemory(user, goalText) {
   if (user && goalText) {
-    user.goalMemory = {
-      text: goalText,
-      date: new Date()
-    };
-    await user.save();
-    console.log(`✅ Goal for user ${user.telegramId} saved to database.`);
-  } else {
-    console.error(`❌ User not found or no goal text provided to save goal.`);
+    // Only save the goal if it's new or different from the current one
+    if (!user.goalMemory || user.goalMemory.text !== goalText) {
+      user.goalMemory = {
+        text: goalText,
+        date: new Date()
+      };
+      await user.save();
+      console.log(`✅ Goal for user ${user.telegramId} saved to database.`);
+      return true; // Return true if a new goal was saved
+    }
   }
+  return false; // Return false if no new goal was saved
 }
-
+// --- NEW MEMORY-RELATED FUNCTIONS ---
 async function addRecentChat(user, message) {
   if (!user || !message) {
     console.error("❌ Invalid user or message for addRecentChat.");
@@ -187,7 +188,6 @@ async function addImportantMemory(user, message) {
 
   await user.save();
 }
-
 // --- END OF NEW FUNCTIONS ---
 
 module.exports = {
@@ -199,7 +199,7 @@ module.exports = {
   updateUserAIUsage,
   getModelForUser,
   updateUserField,
-  addGoalMemory,        // ✅ Now exported!
-  addRecentChat,      // ✅ Now exported!
-  addImportantMemory, // ✅ Now exported!
+  addGoalMemory,
+  addRecentChat,
+  addImportantMemory,
 };
