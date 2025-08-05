@@ -1,6 +1,12 @@
 // File: src/handlers/messageHandlers.js
 const { getSmartResponse } = require('../utils/getSmartResponse');
-const { getUserByTelegramId, getOrCreateUser, addGoalMemory } = require('../controllers/userController'); // Updated import
+const { 
+  getUserByTelegramId, 
+  getOrCreateUser, 
+  addGoalMemory, 
+  addRecentChat, // New function for short-term memory
+  addImportantMemory // New function for long-term memory
+} = require('../controllers/userController'); 
 const {
   hasAIUsageAccess,
   trackAIUsage,
@@ -37,11 +43,29 @@ async function handleMessage(bot, msg) {
     }
     const model = await getModelForUser(user);
     if (!model) {
-      await bot.sendMessage(chatId, "Your current plan doesn’t support AI access. Upgrade to continue.");
+      await bot.sendMessage(chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
       return;
     }
+
+    // --- NEW: Handle the /remember command before anything else ---
+    if (userInput.startsWith('/remember')) {
+      const textToRemember = userInput.replace('/remember', '').trim();
+      if (textToRemember) {
+        await addImportantMemory(user, textToRemember);
+        await bot.sendMessage(chatId, "Got it. I've added that to your long-term memory.");
+      } else {
+        await bot.sendMessage(chatId, "What should I remember? Use the command like this: /remember [your important note]");
+      }
+      return; // Stop processing to avoid AI call
+    }
+    
+    // --- NEW: Add the current message to recent chat history ---
+    await addRecentChat(user, userInput);
+    
     const StrictMode = user.missedCheckins >= 3;
-    const { messages: aiReplyMessages } = await getSmartResponse(user.telegramId, userInput, model, StrictMode);
+    // --- IMPORTANT FIX: Passing the entire `user` object to getSmartResponse ---
+    const { messages: aiReplyMessages } = await getSmartResponse(user, userInput, model, StrictMode);
+    
     let aiReply = '';
     if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
       aiReply = aiReplyMessages.filter(m => typeof m === 'string').join('\n\n');
@@ -52,14 +76,12 @@ async function handleMessage(bot, msg) {
       await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
       return;
     }
-
-    // THIS IS THE FIX: addGoalMemory now uses the database directly
+    
+    // --- Existing logic for saving a goal ---
     if (userInput.toLowerCase().includes('my goal is')) {
       await addGoalMemory(user, userInput);
       await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
     }
-    
-    // THIS IS THE FIX: Removed the incorrect streak/check-in logic
     
     if (!aiReply.trim()) {
       console.error("⚠️ Empty AI reply:", aiReplyRaw);
@@ -76,8 +98,7 @@ async function handleMessage(bot, msg) {
     }
     await trackAIUsage(user, 'general');
 
-    // This is the correct place to save the user, but we've removed the buggy fields.
-    await user.save();
+    // --- REMOVED: Redundant user.save() call. It is handled by the new controller functions. ---
   } catch (error) {
     console.error("❌ Error handling message:", error);
     await bot.sendMessage(chatId, "Something went wrong while processing your message. Please try again.");

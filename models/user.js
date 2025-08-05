@@ -35,9 +35,18 @@ const userSchema = new mongoose.Schema({
       }
     }]
   }],
-  // --- END ADDED/UPDATED FIELDS ---
+  // --- NEW MEMORY FIELDS FOR LONG-TERM CONTEXT ---
+  recentChatMemory: [{
+    text: String,
+    timestamp: Date,
+  }],
+  importantMemory: [{
+    text: String,
+    timestamp: Date,
+  }],
+  // --- END OF NEW MEMORY FIELDS ---
   
-  focusGoal: String, // This field is redundant now, but kept for migration purposes
+  focusGoal: String, // This field is redundant now, but kept as requested
   focusDuration: String,
   timelineFlag: {
     type: String,

@@ -2,30 +2,18 @@
 // We no longer need to import `storage.js` since we're using Mongoose
 const openai = require('./openai');
 
-async function getSmartResponse(user, userInput, model = 'gpt-4o') {
-  // IMPORTANT: This function now expects the `user` object to be passed in,
-  // not just the userId. This is more efficient.
+async function getSmartResponse(user, userInput, model = 'gpt-4o', strictMode = false) {
+  // The function signature now includes `strictMode`
+  // and expects the `user` object to be passed in.
   try {
     const goal = user.goalMemory?.text || 'No specific goal provided';
     
-    // We now get recent chats from the user object, which is from the database.
+    // We now get recent chats and long-term notes from the user object, from the database.
     const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
-    
-    const prompt = `
-    You are Focusly, a strict yet supportive accountability coach. Be concise, helpful, and clear.
-    This user's goal is: "${goal}"
-    Recent conversation:
-    ${recent}"
-    User just said: "${userInput}"
-    Respond with a direct message relevent to the user's message that guides or challenges them appropriately.`;
+    const importantMemory = user.importantMemory?.map(mem => `Long-Term Note: ${mem.text}`).join('\n') || '';
 
-    const completion = await openai.chat.completions.create({
-      model,
-      response_format: { "type": "json_object" },
-      messages: [
-        {
-          role: 'system',
-          content: `
+    // We'll create a dynamic system prompt that includes all the context
+    const systemPromptContent = `
 You are Focusly — a tough-love productivity coach and mindset strategist.
 
 You help users:
@@ -45,6 +33,13 @@ RULES:
 - If user gives a vague time like "this evening", assume it may relate to a previously mentioned goal.
 - ALWAYS respond in JSON (no markdown or prose).
 
+User's Goal: "${goal}"
+${importantMemory ? '\nImportant Memories:\n' + importantMemory : ''}
+Recent conversation:
+${recent}"
+
+The user's next message is: "${userInput}"
+
 Respond in this strict format:
 
 {
@@ -54,10 +49,20 @@ Respond in this strict format:
   "duration": "optional duration (e.g. this evening, 2 hours)",
   "timelineFlag": "ok | too_short | too_long | missing"
 }
-          `.trim(),
+`.trim();
+
+    const messages = [
+        {
+          role: 'system',
+          content: systemPromptContent
         },
-        { role: 'user', content: prompt },
-      ],
+        // We no longer need to pass `prompt` as a user message
+    ];
+
+    const completion = await openai.chat.completions.create({
+      model,
+      response_format: { "type": "json_object" },
+      messages,
     });
 
     const raw = completion.choices[0].message.content.trim();
