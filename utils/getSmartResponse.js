@@ -1,4 +1,5 @@
 
+const { response } = require('express');
 const openai = require('./openai');
 const { getUserMemory } = require('./storage');
 async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
@@ -20,6 +21,7 @@ async function getSmartResponse(userId, userInput, model = 'gpt-4o') {
 
     const completion = await openai.chat.completions.create({
       model,
+      response_format: { "type": "json_object" },
       messages: [
         {
           role: 'system',
@@ -60,25 +62,33 @@ Respond in this strict format:
 
     const raw = completion.choices[0].message.content.trim();
     const clean = raw
-      .replace(/^```json/, '')
-      .replace(/^```/, '')
-      .replace(/```$/, '')
-      .trim();
+      //.replace(/^```json/, '')
+      //.replace(/^```/, '')
+      //.replace(/```$/, '')
+      //.trim();
 
     let structured;
     try {
-      structured = JSON.parse(clean);
+      structured = JSON.parse(raw);
     } catch (err) {
-      console.warn('Warning: Could not parse JSON from OpenAI. Raw:', clean);
-      return {
-        messages: [raw],
-        intent: 'general',
-        goal: '',
-        duration: '',
-        timelineFlag: 'missing',
-      };
-    }
-
+        console.warn('Warning: Clean JSON parse failed. Attempting fallback. Raw:', raw);
+        const jsonMatch = raw.match(/```json\n?([\s\S]*)\n?```|{([\s\S]*)}/);
+        if (jsonMatch) {
+          const jsonString = `{${jsonMatch[1] || jsonMatch[2]}}`;
+          structured = JSON.parse(jsonString);
+        } 
+        else {
+          // If even the fallback fails, return a default structured response
+          console.error('Fatal: Fallback JSON extraction failed. Raw:', raw);
+          return {
+           messages: [raw],
+            intent: 'general',
+            goal: '',
+            duration: '',
+            timelineFlag: 'missing',
+          };
+        }
+      }
     // Ensure response is properly shaped
     if (!Array.isArray(structured.messages)) {
       structured.messages = [String(structured.messages || "I'm here to help.")];
