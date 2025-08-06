@@ -1,7 +1,6 @@
-// File: src/handlers/checklistHandlers.js
-
+// File: src/utils/generateChecklist.js
 const { saveChecklist, carryOverIncompleteTasks, getChecklistByDate } = require('../controllers/checklistController');
-const { getSmartResponse } = require('../utils/getSmartResponse');
+const { getSmartResponse } = require('./getSmartResponse');
 const {
   hasAIUsageAccess,
   trackAIUsage,
@@ -15,74 +14,78 @@ const {
  *
  * @param {Object} user - The Mongoose user document.
  * @param {string} goal - The user's primary goal for the AI prompt.
- * @returns {Promise<Array<Object>>} - An array of checklist items or a message for the user.
+ * @param {string} model - The AI model to use (e.g., 'gpt-4o').
+ * @returns {Promise<string|null>} - A formatted message with the checklist or null on failure.
  */
-async function generateChecklist(user, goal) {
+async function generateChecklist(user, goal, model) {
   try {
-    // --- Step 1: Handle Date Calculations and Task Carry-Over ---
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
     const existingChecklistForToday = await getChecklistByDate(user._id, today);
 
-    // Carry over incomplete tasks from yesterday. This function should also return
-    // the carried-over tasks to be merged later.
+    // If a checklist already exists for today, we don't need to generate a new one.
+    if (existingChecklistForToday) {
+        console.log(`Checklist for user ${user.telegramId} already exists for today. Skipping generation.`);
+        // Format and return the existing checklist message
+        const formattedTasks = existingChecklistForToday.tasks
+          .map(task => `- ${task.text}`)
+          .join('\n');
+        return `✅ **Your checklist for today is ready:**\n\n${formattedTasks}`;
+    }
+
     const carriedOverTasks = await carryOverIncompleteTasks(user._id, yesterday, today);
 
-    // --- Step 2: Check Subscription and AI Access ---
     const aiAllowed = await hasAIUsageAccess(user, 'checklist');
+    let allTasks = [...carriedOverTasks];
 
     if (!aiAllowed) {
-      // If AI access is denied, return a manual checklist and do not proceed with AI
       const freePlanMessage = "Since you're on the free plan, here’s a manual tip:\n" +
         `• Break your main goal "${goal}" into 3 actionable tasks.\n` +
         "• Keep them simple and realistic.\n" +
         "• Upgrade to unlock AI-powered checklists.";
+      
+      const manualTask = {
+        text: `Your goal is: ${goal}.`,
+        completed: false
+      };
+      allTasks.push(manualTask);
 
-      // To handle this, we can either return the message directly or save it as a task.
-      // Let's return the structured response to be handled by the message handler.
-      return [{
-        text: freePlanMessage,
-        completed: false,
-        carriedOver: false
-      }];
+      // Save the manual task and return the free plan message
+      await saveChecklist(user._id, today, allTasks);
+      return freePlanMessage;
     }
 
-    // --- Step 3: Generate AI Prompt and Get Response ---
-    const tasksYesterday = carriedOverTasks.map(task => task.text);
-    const model = await getModelForUser(user);
-    const prompt = `
+    // --- CRITICAL FIXES: Correctly calling the AI ---
+    const aiPrompt = `
 You are Focusly, a productivity AI assistant. Help the user break down their goal into a checklist.
-
-Goal: "${goal}"
-
-Yesterday's tasks were: ${tasksYesterday?.length ? tasksYesterday.join(', ') : 'None'}
-
+User's Goal: "${goal}"
+Yesterday's incomplete tasks: ${carriedOverTasks.length ? carriedOverTasks.map(task => task.text).join(', ') : 'None'}
 Generate a short checklist (3–5 points) for today's focus, personalized and smart. Be strict but supportive.
-Respond in JSON format as an array of strings like ["task 1", "task 2", "task 3"].`;
+Respond in a simple JSON array of strings like ["task 1", "task 2", "task 3"].
+`;
+    
+    // We now pass the entire `user` object and the AI prompt as a single user message.
+    const aiResponse = await getSmartResponse(user, aiPrompt, model);
 
-    const aiReply = await getSmartResponse(user.telegramId, prompt, model);
-
-    if (!aiReply || !aiReply.messages || !Array.isArray(aiReply.messages)) {
-      console.error("⚠️ AI failed to generate a valid checklist response:", aiReply);
-      return [{ text: "AI failed to generate checklist. Try again later." }];
+    // Process the AI response to get the checklist
+    let newAiTasks = [];
+    if (aiResponse && Array.isArray(aiResponse.messages)) {
+      newAiTasks = aiResponse.messages
+        .filter(task => typeof task === 'string' && task.trim() !== '')
+        .map(task => ({
+          text: task.trim(),
+          completed: false,
+          carriedOver: false,
+        }));
+    } else {
+      console.error("⚠️ AI failed to generate a valid checklist response:", aiResponse);
+      const manualTask = { text: `Goal: ${goal}. Review and set your tasks.`, completed: false };
+      allTasks.push(manualTask);
     }
+    
+    allTasks = [...allTasks, ...newAiTasks];
 
-    // --- Step 4: Process AI Response and Merge with Carried-Over Tasks ---
-    const newAiTasks = aiReply.messages
-      .flatMap(msg => msg.split('\n')) // Split each message by newline
-      .map(task => ({
-        text: task.trim(),
-        completed: false,
-        carriedOver: false,
-      }))
-      .filter(item => item.text); // Filter out empty strings
-
-    // Create a combined list of tasks, preserving any existing checklist items for today
-    const allTasks = existingChecklistForToday
-      ? [...existingChecklistForToday.tasks, ...carriedOverTasks, ...newAiTasks]
-      : [...carriedOverTasks, ...newAiTasks];
-
-    // --- Step 5: Deduplicate and Save to Database ---
+    // Deduplicate tasks
     const uniqueTasks = allTasks.reduce((accumulator, current) => {
       if (!accumulator.some(item => item.text === current.text)) {
         accumulator.push(current);
@@ -91,15 +94,17 @@ Respond in JSON format as an array of strings like ["task 1", "task 2", "task 3"
     }, []);
 
     // Save the final, unique list of tasks to the database
-    const finalChecklist = await saveChecklist(user._id, today, uniqueTasks);
+    const savedChecklist = await saveChecklist(user._id, today, uniqueTasks);
 
-    // --- Step 6: Track AI Usage and Return the Final Checklist ---
     await trackAIUsage(user, 'checklist');
 
-    return finalChecklist.tasks; // Return the tasks of the saved checklist document
+    // --- Return a formatted string instead of an object ---
+    const formattedTasks = savedChecklist.tasks.map(task => `- ${task.text}`).join('\n');
+    return `📝 **Here's your daily checklist based on your goal:**\n\n${formattedTasks}`;
+
   } catch (error) {
     console.error('Checklist generation error:', error);
-    return [{ text: "Something went wrong while generating your checklist." }];
+    return `❌ I ran into an issue while generating your checklist. Please try again later.`;
   }
 }
 
