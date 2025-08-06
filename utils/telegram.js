@@ -1,5 +1,4 @@
 // File: src/utils/telegram.js
-const { createSubscriptionInlineKeyboard } = require('./inlineKeyboards');
 
 // This function sends a message to a user
 async function sendTelegramMessage(telegramId, message) {
@@ -10,14 +9,25 @@ async function sendTelegramMessage(telegramId, message) {
   console.log(`Sending message to ${telegramId}: ${message}`);
 }
 
-// 🆕 NEW: This function sends a message with subscription buttons
+// 🆕 This function now creates the keyboard inline to avoid the 'inlineKeyboards' error
 async function sendSubscriptionOptions(bot, chatId) {
   const message = 'Ready to achieve your goals? Choose a plan below to get started!';
-  const keyboard = createSubscriptionInlineKeyboard();
-  await bot.sendMessage(chatId, message, { reply_markup: keyboard });
+  
+  // 🆕 The inline keyboard is created directly here.
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: 'Premium Plan (GPT-4o) 🚀', callback_data: 'subscribe_premium' }],
+      [{ text: 'Basic Plan (GPT-3.5) ✨', callback_data: 'subscribe_basic' }],
+    ],
+  };
+  
+  await bot.sendMessage(chatId, message, { 
+    reply_markup: keyboard,
+    parse_mode: 'Markdown' 
+  });
 }
 
 module.exports = {
   sendTelegramMessage,
-  sendSubscriptionOptions, // 🆕 Correctly exporting the new function
+  sendSubscriptionOptions, // Correctly exporting the function
 };
