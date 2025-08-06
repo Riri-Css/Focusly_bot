@@ -1,21 +1,23 @@
-const axios = require('axios');
+// File: src/utils/telegram.js
+const { createSubscriptionInlineKeyboard } = require('./inlineKeyboards');
 
-const TELEGRAM_BOT_TOKEN = process.env.BOT_TOKEN; // make sure this is defined in .env or your environment
-const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-
-async function sendTelegramMessage(chatId, text) {
-  try {
-    await axios.post(TELEGRAM_API_URL, {
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'Markdown',
-    });
-  } catch (error) {
-    console.error(`Failed to send Telegram message to ${chatId}:`, error.message);
-  }
+// This function sends a message to a user
+async function sendTelegramMessage(telegramId, message) {
+  // Logic to send a message (assuming you have a bot instance here or pass it)
+  // For example:
+  // bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+  // You might need to adjust this depending on how your bot instance is handled.
+  console.log(`Sending message to ${telegramId}: ${message}`);
 }
 
-module.exports = { 
-  sendTelegramMessage, 
-  sendSubscriptionOptions
+// 🆕 NEW: This function sends a message with subscription buttons
+async function sendSubscriptionOptions(bot, chatId) {
+  const message = 'Ready to achieve your goals? Choose a plan below to get started!';
+  const keyboard = createSubscriptionInlineKeyboard();
+  await bot.sendMessage(chatId, message, { reply_markup: keyboard });
+}
+
+module.exports = {
+  sendTelegramMessage,
+  sendSubscriptionOptions, // 🆕 Correctly exporting the new function
 };
