@@ -33,7 +33,7 @@ function startDailyJobs() {
     timezone: TIMEZONE
   });
 
-  // ⏰ 12 PM Reminder
+  // ⏰ 12 PM Reminder (unchanged)
   cron.schedule('0 13 * * *', async () => {
     try {
       const users = await User.find();
@@ -51,7 +51,7 @@ function startDailyJobs() {
     timezone: TIMEZONE
   });
 
-  // ⏰ 3 PM Progress Reminder
+  // ⏰ 3 PM Progress Reminder (unchanged)
   cron.schedule('0 15 * * *', async () => {
     try {
       const users = await User.find();
@@ -69,7 +69,7 @@ function startDailyJobs() {
     timezone: TIMEZONE
   });
 
-  // ⏰ 6 PM Progress Reminder
+  // ⏰ 6 PM Progress Reminder (unchanged)
   cron.schedule('0 18 * * *', async () => {
     try {
       const users = await User.find();
@@ -87,7 +87,7 @@ function startDailyJobs() {
     timezone: TIMEZONE
   });
 
-  // ⏰ 9 PM Check-in Reminder and Streak Reset
+  // ⏰ 9 PM Check-in Reminder and Streak Reset (UPDATED with streak logic)
   cron.schedule('0 21 * * *', async () => {
     try {
       const users = await User.find();
@@ -95,14 +95,22 @@ function startDailyJobs() {
         const today = new Date().toDateString();
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
         const hasCheckedInToday = lastChecklist && new Date(lastChecklist.date).toDateString() === today && lastChecklist.checkedIn;
-        if (lastChecklist && new Date(lastChecklist.date).toDateString() === today && !lastChecklist.checkedIn) {
-          await sendTelegramMessage(user.telegramId, "It’s 9PM! Time to check in. How did you do with your tasks today?");
+        
+        if (hasCheckedInToday) {
+            // User checked in today, so we increment their streak
+            user.currentStreak = (user.currentStreak || 0) + 1;
+            if (user.currentStreak > (user.longestStreak || 0)) {
+                user.longestStreak = user.currentStreak;
+            }
+            user.missedCheckins = 0; // Reset missed checkins
+            await sendTelegramMessage(user.telegramId, `Awesome! You've successfully checked in for today, bringing your streak to ${user.currentStreak} days.`);
+        } else {
+            // User did not check in, so we reset the streak and increment missed checkins
+            user.currentStreak = 0;
+            user.missedCheckins = (user.missedCheckins || 0) + 1;
+            await sendTelegramMessage(user.telegramId, "Hey! You haven't checked in today. Please let me know how your day went. Your streak has been reset.");
         }
-        if (!hasCheckedInToday && user.checklists?.length) {
-          await sendTelegramMessage(user.telegramId, "Hey! You haven't checked in today. Please let me know how your day went.");
-          user.missedCheckins = (user.missedCheckins || 0) + 1;
-          await user.save();
-        }
+        await user.save();
       }
     } catch (err) {
       console.error('9 PM cron error:', err.message);
@@ -110,6 +118,70 @@ function startDailyJobs() {
   }, {
     timezone: TIMEZONE
   });
+
+  // --- NEW WEEKLY REFLECTION JOB ---
+  // ⏰ 9 PM every Sunday for a weekly report (0 21 * * 0)
+  cron.schedule('0 21 * * 0', async () => {
+    try {
+      const users = await User.find();
+      for (const user of users) {
+        const last7DaysChecklists = user.checklists
+          .filter(c => new Date(c.date) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+        
+        if (last7DaysChecklists.length > 0) {
+          const completedTasksCount = last7DaysChecklists.reduce((sum, checklist) => 
+            sum + checklist.tasks.filter(task => task.completed).length, 0);
+
+          const totalTasksCount = last7DaysChecklists.reduce((sum, checklist) => 
+            sum + checklist.tasks.length, 0);
+            
+          const reflectionMessage = `
+**Weekly Reflection** ✨
+You've completed **${completedTasksCount}** out of **${totalTasksCount}** tasks this past week!
+Your current check-in streak is **${user.currentStreak || 0} days**. Let's aim to keep it going strong! 💪
+`;
+          await sendTelegramMessage(user.telegramId, reflectionMessage);
+        }
+      }
+    } catch (err) {
+      console.error('Weekly reflection cron error:', err.message);
+    }
+  }, {
+    timezone: TIMEZONE
+  });
+
+  // --- NEW MONTHLY REFLECTION JOB ---
+  // ⏰ 9 AM on the 1st of every month (0 9 1 * *)
+  cron.schedule('0 9 1 * *', async () => {
+    try {
+        const users = await User.find();
+        for (const user of users) {
+            const today = new Date();
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const thisMonthChecklists = user.checklists
+                .filter(c => new Date(c.date) >= startOfMonth);
+
+            if (thisMonthChecklists.length > 0) {
+                const completedTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
+                    sum + checklist.tasks.filter(task => task.completed).length, 0);
+
+                const totalTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
+                    sum + checklist.tasks.length, 0);
+
+                const reflectionMessage = `
+**Monthly Report** 🗓️
+This month, you completed **${completedTasksCount}** out of **${totalTasksCount}** tasks!
+Your longest streak so far is **${user.longestStreak || 0} days**. Great work! 🎉
+`;
+                await sendTelegramMessage(user.telegramId, reflectionMessage);
+            }
+        }
+    } catch (err) {
+        console.error('Monthly reflection cron error:', err.message);
+    }
+}, {
+    timezone: TIMEZONE
+});
 }
 
 module.exports = { startDailyJobs };

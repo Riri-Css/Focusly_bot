@@ -6,9 +6,9 @@ const {
   addGoalMemory, 
   addRecentChat, 
   addImportantMemory,
-  updateUserField, // 🆕 Import this new function
-  updateChecklistStatus, // 🆕 Import this new function
-  getChecklistByDate // 🆕 Import this new function
+  updateUserField,
+  updateChecklistStatus,
+  getChecklistByDate 
 } = require('../controllers/userController'); 
 const {
   hasAIUsageAccess,
@@ -51,16 +51,31 @@ async function handleMessage(bot, msg) {
     }
     
     // 🆕 START OF NEW CHECK-IN FEATURE LOGIC
-    // Check if the user is in the middle of a check-in conversation
     if (user.stage === 'awaiting_checkin_response') {
       const today = new Date().toDateString();
       await updateChecklistStatus(user._id, today, true, userInput);
-      await updateUserField(userId, { stage: 'onboarded' }); // Reset the stage
-      await bot.sendMessage(chatId, "Got it! Your check-in has been recorded. Awesome job!");
-      return; // End processing, as the message was a check-in report
+      await updateUserField(userId, { stage: 'onboarded' });
+      
+      // 🆕 Update streak logic here for instant feedback
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+      const yesterdayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === yesterday);
+      
+      if (yesterdayChecklist && yesterdayChecklist.checkedIn) {
+        user.currentStreak = (user.currentStreak || 0) + 1;
+        if (user.currentStreak > (user.longestStreak || 0)) {
+            user.longestStreak = user.currentStreak;
+        }
+        await user.save();
+        await bot.sendMessage(chatId, `Got it! Your check-in has been recorded. Your streak is now ${user.currentStreak} days! Awesome job!`);
+      } else {
+        user.currentStreak = 1;
+        await user.save();
+        await bot.sendMessage(chatId, "Got it! Your check-in has been recorded. You've started a new streak! Awesome job!");
+      }
+
+      return;
     }
     
-    // Handle the new `/checkin` command
     if (userInput.toLowerCase() === '/checkin') {
       const today = new Date().toDateString();
       const todayChecklist = await getChecklistByDate(user._id, today);
@@ -76,11 +91,10 @@ async function handleMessage(bot, msg) {
 
       await updateUserField(userId, { stage: 'awaiting_checkin_response' });
       await bot.sendMessage(chatId, "Great! How did you do with your tasks today? Please provide a brief report on your progress.");
-      return; // End processing to wait for user's report
+      return;
     }
     // 🆕 END OF NEW CHECK-IN FEATURE LOGIC
     
-    // --- Existing logic for /remember command ---
     if (userInput.startsWith('/remember')) {
       const textToRemember = userInput.replace('/remember', '').trim();
       if (textToRemember) {
@@ -92,7 +106,6 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    // --- Existing AI-based conversation logic ---
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
