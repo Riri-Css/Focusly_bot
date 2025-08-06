@@ -41,7 +41,7 @@ function startDailyJobs() {
         const today = new Date().toDateString();
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
         if (!lastChecklist || new Date(lastChecklist.date).toDateString() !== today) {
-          await sendTelegramMessage(user.telegramId, "Hey, just checking in! It looks like you don't have a checklist for today. What's your focus?");
+          await sendTelegramMessage(user.telegramId, "Hey, just checking in! How's it going, hope you're still focused or you've gone to distract yourself? Remember what's stopping you from achieving your goal is the action you've not taken yet.");
         }
       }
     } catch (err) {
@@ -59,7 +59,7 @@ function startDailyJobs() {
         const today = new Date().toDateString();
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
         if (lastChecklist && new Date(lastChecklist.date).toDateString() === today && !lastChecklist.checkedIn) {
-          await sendTelegramMessage(user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks?");
+          await sendTelegramMessage(user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
         }
       }
     } catch (err) {
@@ -77,7 +77,7 @@ function startDailyJobs() {
         const today = new Date().toDateString();
         const lastChecklist = user.checklists?.[user.checklists.length - 1];
         if (lastChecklist && new Date(lastChecklist.date).toDateString() === today && !lastChecklist.checkedIn) {
-          await sendTelegramMessage(user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted?");
+          await sendTelegramMessage(user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted? I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
         }
       }
     } catch (err) {
