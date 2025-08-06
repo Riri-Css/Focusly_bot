@@ -15,4 +15,7 @@ async function sendTelegramMessage(chatId, text) {
   }
 }
 
-module.exports = { sendTelegramMessage };
+module.exports = { 
+  sendTelegramMessage, 
+  sendSubscriptionOptions
+};

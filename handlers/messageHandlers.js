@@ -16,6 +16,7 @@ const {
   getModelForUser,
 } = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram'); // 🆕 Import the new function
+const { sendSubscriptionOptions } = require('../utils/telegram');
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
