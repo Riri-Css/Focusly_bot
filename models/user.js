@@ -13,11 +13,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  // 🆕 New field for conversational state management
-  stage: {
-    type: String,
-    default: 'onboarded'
-  },
+  // 🆕 New field for conversational state management
+  stage: {
+    type: String,
+    default: 'onboarded'
+  },
   // --- ADDED/UPDATED FIELDS ---
   goalMemory: {
     text: String,
@@ -39,12 +39,12 @@ const userSchema = new mongoose.Schema({
         default: false
       }
     }],
-    // 🆕 New fields to store check-in status and report
-    checkedIn: {
-        type: Boolean,
-        default: false
-    },
-    progressReport: String,
+    // 🆕 New fields to store check-in status and report
+    checkedIn: {
+        type: Boolean,
+        default: false
+    },
+    progressReport: String,
   }],
   // --- NEW MEMORY FIELDS FOR LONG-TERM CONTEXT ---
   recentChatMemory: [{
@@ -123,6 +123,7 @@ const userSchema = new mongoose.Schema({
       default: false
     },
   },
+  // 🆕 UPDATED AI USAGE OBJECT
   aiUsage: {
     todayCount: {
       type: Number,
@@ -132,8 +133,8 @@ const userSchema = new mongoose.Schema({
       type: Number,
       default: 0
     },
-    lastUsedDate: {
-      type: String,
+    lastUpdated: { // 🆕 Renamed from `lastUsedDate` for clarity
+      type: Date,
       default: null
     },
   },

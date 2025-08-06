@@ -23,24 +23,50 @@ function getUserPlan(user) {
 
 function canAccessAI(user, feature = 'general') {
   const plan = getUserPlan(user);
+  
   if (plan === 'premium') return true;
+
+  // 🆕 NEW: Reset usage if the day/week has changed
+  if (user.lastUsageUpdate) {
+    const lastUpdateMoment = moment(user.lastUsageUpdate);
+    
+    // Reset daily count if it's a new day
+    if (!moment().isSame(lastUpdateMoment, 'day')) {
+      user.dailyAIUses = 0;
+    }
+    
+    // Reset weekly count if it's a new week
+    if (!moment().isSame(lastUpdateMoment, 'week')) {
+      user.weeklyAIUses = 0;
+    }
+  }
+
   if (plan === 'basic') {
     if (feature === 'checklist') return (user.weeklyAIUses || 0) < 10;
-    return false;
+    return false; // Basic plan does not allow general AI chat
   }
+  
   if (plan === 'trial') {
     return (user.dailyAIUses || 0) < 5;
   }
+  
   return false;
 }
 
 function incrementAIUsage(user, feature = 'general') {
   const plan = getUserPlan(user);
+  
+  // 🆕 NEW: Update the timestamp before checking
+  user.lastUsageUpdate = new Date();
+
   if (plan === 'basic' && feature === 'checklist') {
     user.weeklyAIUses = (user.weeklyAIUses || 0) + 1;
   } else if (plan === 'trial') {
     user.dailyAIUses = (user.dailyAIUses || 0) + 1;
   }
+  // No increment for premium or other plans since they are unlimited
+
+  // 🆕 The user.save() is already here, which is correct
   return user.save();
 }
 
