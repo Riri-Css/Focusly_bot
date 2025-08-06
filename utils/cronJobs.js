@@ -4,6 +4,7 @@ const User = require('../models/user');
 const { sendTelegramMessage } = require('./telegram');
 const { generateChecklist } = require('./generateChecklist');
 const { getModelForUser } = require('../utils/subscriptionUtils');
+const { getChecklistByDate } = require('../controllers/userController');
 
 // The timezone for Nigeria is 'Africa/Lagos'
 const TIMEZONE = 'Africa/Lagos';
@@ -87,28 +88,24 @@ function startDailyJobs() {
     timezone: TIMEZONE
   });
 
-  // ⏰ 9 PM Check-in Reminder and Streak Reset (UPDATED with streak logic)
+  // ⏰ 9 PM Check-in Reminder and Streak Reset (UPDATED with corrected logic)
   cron.schedule('0 21 * * *', async () => {
     try {
       const users = await User.find();
       for (const user of users) {
         const today = new Date().toDateString();
-        const lastChecklist = user.checklists?.[user.checklists.length - 1];
-        const hasCheckedInToday = lastChecklist && new Date(lastChecklist.date).toDateString() === today && lastChecklist.checkedIn;
+        const hasCheckedInToday = user.checklists.some(c => new Date(c.date).toDateString() === today && c.checkedIn);
         
-        if (hasCheckedInToday) {
-            // User checked in today, so we increment their streak
-            user.currentStreak = (user.currentStreak || 0) + 1;
-            if (user.currentStreak > (user.longestStreak || 0)) {
-                user.longestStreak = user.currentStreak;
-            }
-            user.missedCheckins = 0; // Reset missed checkins
-            await sendTelegramMessage(user.telegramId, `Awesome! You've successfully checked in for today, bringing your streak to ${user.currentStreak} days.`);
-        } else {
+        if (!hasCheckedInToday) {
             // User did not check in, so we reset the streak and increment missed checkins
             user.currentStreak = 0;
             user.missedCheckins = (user.missedCheckins || 0) + 1;
             await sendTelegramMessage(user.telegramId, "Hey! You haven't checked in today. Please let me know how your day went. Your streak has been reset.");
+        } else {
+            // User already checked in manually, no action needed here.
+            // The streak was already updated in messageHandlers.js.
+            // We just need to make sure missed checkins is reset.
+            user.missedCheckins = 0;
         }
         await user.save();
       }
