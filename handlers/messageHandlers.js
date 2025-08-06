@@ -15,6 +15,7 @@ const {
   trackAIUsage,
   getModelForUser,
 } = require('../utils/subscriptionUtils');
+const { sendSubscriptionOptions } = require('../utils/telegram'); // 🆕 Import the new function
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -96,58 +97,58 @@ async function handleMessage(bot, msg) {
         const chatId = callbackQuery.message.chat.id;
 
         try {
-            let user = await getUserByTelegramId(userId);
-            const today = new Date().toDateString();
-            const todayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === today);
+          let user = await getUserByTelegramId(userId);
+          const today = new Date().toDateString();
+          const todayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === today);
 
-            if (!todayChecklist) {
-                await bot.answerCallbackQuery(callbackQuery.id, { text: "There's no checklist to update!" });
-                return;
+          if (!todayChecklist) {
+            await bot.answerCallbackQuery(callbackQuery.id, { text: "There's no checklist to update!" });
+            return;
+          }
+
+          if (action === 'toggle') {
+            const taskToUpdate = todayChecklist.tasks.find(task => task._id.toString() === taskId);
+            if (taskToUpdate) {
+              taskToUpdate.completed = !taskToUpdate.completed;
+              await user.save();
+
+              const updatedMessage = createChecklistMessage(todayChecklist);
+              await bot.editMessageText(updatedMessage, {
+                chat_id: chatId,
+                message_id: callbackQuery.message.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: createChecklistKeyboard(todayChecklist)
+              });
+              await bot.answerCallbackQuery(callback.id);
             }
-
-            if (action === 'toggle') {
-                const taskToUpdate = todayChecklist.tasks.find(task => task._id.toString() === taskId);
-                if (taskToUpdate) {
-                    taskToUpdate.completed = !taskToUpdate.completed;
-                    await user.save();
-
-                    const updatedMessage = createChecklistMessage(todayChecklist);
-                    await bot.editMessageText(updatedMessage, {
-                        chat_id: chatId,
-                        message_id: callbackQuery.message.message_id,
-                        parse_mode: 'Markdown',
-                        reply_markup: createChecklistKeyboard(todayChecklist)
-                    });
-                    await bot.answerCallbackQuery(callbackQuery.id);
-                }
-            } else if (action === 'submit') {
-                const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
-                const yesterdayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === yesterday);
-                
-                if (yesterdayChecklist && yesterdayChecklist.checkedIn) {
-                    user.currentStreak = (user.currentStreak || 0) + 1;
-                } else {
-                    user.currentStreak = 1;
-                }
-                if (user.currentStreak > (user.longestStreak || 0)) {
-                    user.longestStreak = user.currentStreak;
-                }
-                
-                const completedTasksCount = todayChecklist.tasks.filter(task => task.completed).length;
-                const totalTasksCount = todayChecklist.tasks.length;
-
-                todayChecklist.checkedIn = true;
-                todayChecklist.progressReport = `Checked in with ${completedTasksCount} out of ${totalTasksCount} tasks completed.`;
-                await user.save();
-
-                const finalMessage = createFinalCheckinMessage(user, todayChecklist);
-                await bot.editMessageText(finalMessage, {
-                    chat_id: chatId,
-                    message_id: callbackQuery.message.message_id,
-                    parse_mode: 'Markdown'
-                });
-                await bot.answerCallbackQuery(callbackQuery.id, { text: "Check-in submitted!" });
+          } else if (action === 'submit') {
+            const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
+            const yesterdayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === yesterday);
+            
+            if (yesterdayChecklist && yesterdayChecklist.checkedIn) {
+              user.currentStreak = (user.currentStreak || 0) + 1;
+            } else {
+              user.currentStreak = 1;
             }
+            if (user.currentStreak > (user.longestStreak || 0)) {
+              user.longestStreak = user.currentStreak;
+            }
+            
+            const completedTasksCount = todayChecklist.tasks.filter(task => task.completed).length;
+            const totalTasksCount = todayChecklist.tasks.length;
+
+            todayChecklist.checkedIn = true;
+            todayChecklist.progressReport = `Checked in with ${completedTasksCount} out of ${totalTasksCount} tasks completed.`;
+            await user.save();
+
+            const finalMessage = createFinalCheckinMessage(user, todayChecklist);
+            await bot.editMessageText(finalMessage, {
+              chat_id: chatId,
+              message_id: callbackQuery.message.message_id,
+              parse_mode: 'Markdown'
+            });
+            await bot.answerCallbackQuery(callbackQuery.id, { text: "Check-in submitted!" });
+          }
         } catch (error) {
             console.error("❌ Error handling callback query:", error);
             await bot.answerCallbackQuery(callbackQuery.id, { text: "Something went wrong." });
@@ -178,6 +179,22 @@ async function handleMessage(bot, msg) {
       return;
     }
     // 🆕 END OF NEW INTERACTIVE CHECK-IN FEATURE LOGIC
+
+    // 🆕 NEW: Handle the `/subscribe` command
+    if (userInput.toLowerCase() === '/subscribe') {
+        const now = new Date();
+        const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
+        const isActive = user.subscriptionStatus === 'active' && !isExpired;
+
+        if (isActive) {
+            await bot.sendMessage(chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${user.subscriptionEndDate.toDateString()}**. Thank you for your continued support!`, { parse_mode: 'Markdown' });
+        } else {
+            // User is not subscribed or subscription has expired, show them the options
+            await sendSubscriptionOptions(bot, chatId);
+        }
+        return;
+    }
+    // 🆕 END OF NEW COMMAND
 
     // The old text-based check-in logic has been removed.
     
