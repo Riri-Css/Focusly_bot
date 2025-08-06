@@ -5,7 +5,10 @@ const {
   getOrCreateUser, 
   addGoalMemory, 
   addRecentChat, 
-  addImportantMemory 
+  addImportantMemory,
+  updateUserField, // 🆕 Import this new function
+  updateChecklistStatus, // 🆕 Import this new function
+  getChecklistByDate // 🆕 Import this new function
 } = require('../controllers/userController'); 
 const {
   hasAIUsageAccess,
@@ -46,7 +49,38 @@ async function handleMessage(bot, msg) {
       await bot.sendMessage(chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
       return;
     }
+    
+    // 🆕 START OF NEW CHECK-IN FEATURE LOGIC
+    // Check if the user is in the middle of a check-in conversation
+    if (user.stage === 'awaiting_checkin_response') {
+      const today = new Date().toDateString();
+      await updateChecklistStatus(user._id, today, true, userInput);
+      await updateUserField(userId, { stage: 'onboarded' }); // Reset the stage
+      await bot.sendMessage(chatId, "Got it! Your check-in has been recorded. Awesome job!");
+      return; // End processing, as the message was a check-in report
+    }
+    
+    // Handle the new `/checkin` command
+    if (userInput.toLowerCase() === '/checkin') {
+      const today = new Date().toDateString();
+      const todayChecklist = await getChecklistByDate(user._id, today);
+      
+      if (!todayChecklist) {
+        await bot.sendMessage(chatId, "You don't have a checklist for today yet. Set your goal first!");
+        return;
+      }
+      if (todayChecklist.checkedIn) {
+        await bot.sendMessage(chatId, "You've already checked in for today! You can only check in once per day.");
+        return;
+      }
 
+      await updateUserField(userId, { stage: 'awaiting_checkin_response' });
+      await bot.sendMessage(chatId, "Great! How did you do with your tasks today? Please provide a brief report on your progress.");
+      return; // End processing to wait for user's report
+    }
+    // 🆕 END OF NEW CHECK-IN FEATURE LOGIC
+    
+    // --- Existing logic for /remember command ---
     if (userInput.startsWith('/remember')) {
       const textToRemember = userInput.replace('/remember', '').trim();
       if (textToRemember) {
@@ -58,6 +92,7 @@ async function handleMessage(bot, msg) {
       return;
     }
     
+    // --- Existing AI-based conversation logic ---
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
@@ -74,7 +109,6 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // --- FINAL FIX: Only send the message if a new goal was actually saved ---
     if (intent === 'create_checklist' && goal) {
       const goalSaved = await addGoalMemory(user, goal);
       if (goalSaved) {
