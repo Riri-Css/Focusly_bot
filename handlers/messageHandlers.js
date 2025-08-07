@@ -16,7 +16,7 @@ const {
   getModelForUser,
 } = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram');
-const moment = require('moment-timezone'); // 🆕 Import moment for reliable date handling
+const moment = require('moment-timezone'); 
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -52,7 +52,6 @@ function createFinalCheckinMessage(user, checklist) {
   const totalTasksCount = checklist.tasks.length;
   let message = `**Check-in Complete!** 🎉\n\n`;
   message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
-  // ⚠️ Streak logic is now handled in cronJobs.js, so we don't display it here.
   return message;
 }
 
@@ -64,7 +63,7 @@ async function handleMessage(bot, msg) {
   const userId = msg.from.id;
   const chatId = msg.chat.id;
   const userInput = msg.text?.trim();
-  const TIMEZONE = 'Africa/Lagos'; // 🆕 Define timezone here for consistency
+  const TIMEZONE = 'Africa/Lagos'; 
 
   if (!userInput) {
     await bot.sendMessage(chatId, "Hmm, I didn’t catch that. Try sending it again.");
@@ -72,10 +71,13 @@ async function handleMessage(bot, msg) {
   }
 
   try {
+    // 🆕 This is the correct placement for the user creation logic.
+    // It is no longer blocked by the misplaced listener.
     let user = await getUserByTelegramId(userId);
     if (!user) {
       user = await getOrCreateUser(userId);
     }
+
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
       await bot.sendMessage(chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
@@ -87,66 +89,9 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // 🆕 START OF NEW INTERACTIVE CHECK-IN FEATURE LOGIC
-    bot.on('callback_query', async (callbackQuery) => {
-        const data = callbackQuery.data;
-        const [action, taskId] = data.split('_');
-        const userId = callbackQuery.from.id;
-        const chatId = callbackQuery.message.chat.id;
-
-        try {
-          let user = await getUserByTelegramId(userId);
-          const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
-          const todayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).format('YYYY-MM-DD') === today);
-
-          if (!todayChecklist) {
-            await bot.answerCallbackQuery(callbackQuery.id, { text: "There's no checklist to update!" });
-            return;
-          }
-
-          if (action === 'toggle') {
-            const taskToUpdate = todayChecklist.tasks.find(task => task._id.toString() === taskId);
-            if (taskToUpdate) {
-              taskToUpdate.completed = !taskToUpdate.completed;
-              await user.save();
-
-              const updatedMessage = createChecklistMessage(todayChecklist);
-              await bot.editMessageText(updatedMessage, {
-                chat_id: chatId,
-                message_id: callbackQuery.message.message_id,
-                parse_mode: 'Markdown',
-                reply_markup: createChecklistKeyboard(todayChecklist)
-              });
-              await bot.answerCallbackQuery(callbackQuery.id);
-            }
-          } else if (action === 'submit') {
-            // ⚠️ The streak logic has been moved to the 11:59 PM cron job for reliability.
-            // We only update the checklist here.
-            const completedTasksCount = todayChecklist.tasks.filter(task => task.completed).length;
-            const totalTasksCount = todayChecklist.tasks.length;
-
-            todayChecklist.checkedIn = true;
-            todayChecklist.progressReport = `Checked in with ${completedTasksCount} out of ${totalTasksCount} tasks completed.`;
-            await user.save(); // 🆕 save the user after updating the checklist
-
-            // 🆕 Set the hasCheckedInTonight flag so the 9 PM reminder is skipped
-            user.hasCheckedInTonight = true;
-            await user.save();
-
-            const finalMessage = createFinalCheckinMessage(user, todayChecklist);
-            await bot.editMessageText(finalMessage, {
-              chat_id: chatId,
-              message_id: callbackQuery.message.message_id,
-              parse_mode: 'Markdown'
-            });
-            await bot.answerCallbackQuery(callbackQuery.id, { text: "Check-in submitted!" });
-          }
-        } catch (error) {
-            console.error("❌ Error handling callback query:", error);
-            await bot.answerCallbackQuery(callbackQuery.id, { text: "Something went wrong." });
-        }
-    });
-
+    // ❌ The bot.on('callback_query', ...) listener has been removed from here.
+    // It must be placed in your main index.js file.
+    
     // Handle the new `/checkin` command
     if (userInput.toLowerCase() === '/checkin') {
       const today = moment().tz(TIMEZONE).toDate();
@@ -173,8 +118,8 @@ async function handleMessage(bot, msg) {
 
     // 🆕 The AI's response that creates a checklist should set a flag.
     if (userInput.startsWith('/setgoal')) {
-      // ⚠️ You'll need to update your setGoal logic to handle this.
-      // For now, let's assume the AI's response does this.
+      // ⚠️ You'll need to update your setGoal logic to handle this.
+      // For now, let's assume the AI's response does this.
     }
 
     // Handle the `/subscribe` command
