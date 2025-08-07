@@ -30,19 +30,17 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 8 AM Daily Checklist Generator
-  cron.schedule('0 8 * * *', async () => { // 🆕 Corrected cron schedule to 8 AM
+  cron.schedule('55 15 * * *', async () => {
     console.log('⏰ Running 8 AM daily checklist generator...');
     try {
       const users = await User.find({ 'goalMemory.text': { $exists: true, $ne: '' } });
 
       for (const user of users) {
-        // 🆕 This is the new, updated logic for generating and sending a checklist
         try {
           const today = moment().tz(TIMEZONE).toDate();
           const model = await getModelForUser(user);
           const goal = user.goalMemory.text;
           
-          // Check if the user already has a checklist for today (to prevent duplicates)
           const existingChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
 
           if (existingChecklist) {
@@ -50,7 +48,6 @@ function startDailyJobs(bot) {
             continue;
           }
           
-          // Get the new checklist from the AI
           const aiResponse = await getSmartResponse(user, `My goal is: "${goal}". Please generate a new daily checklist based on this goal.`, model, false);
           
           if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
@@ -77,16 +74,16 @@ function startDailyJobs(bot) {
     }
   }, { timezone: TIMEZONE });
 
-  // ⏰ 12 PM Progress Reminder (Restored)
-  cron.schedule('40 15 * * *', async () => {
+  // ⏰ 12 PM Progress Reminder
+  cron.schedule('0 12 * * *', async () => {
     console.log('⏰ Running 12 PM reminder...');
     try {
       const users = await User.find();
       for (const user of users) {
-        const today = new Date().toDateString();
-        const hasChecklistToday = user.checklists.some(c => new Date(c.date).toDateString() === today);
-        if (user.goalMemory && !hasChecklistToday) {
-          await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working one them now and let me know if you need help.");
+        const today = moment().tz(TIMEZONE).toDate();
+        const hasCheckedIn = user.checklists.some(c => moment(c.date).isSame(today, 'day') && c.checkedIn);
+        if (user.goalMemory && !hasCheckedIn) {
+          await bot.sendMessage(user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working on them now and let me know if you need help.");
           console.log(`✅ Sent 12 PM reminder to user ${user.telegramId}`);
         }
       }
@@ -95,16 +92,16 @@ function startDailyJobs(bot) {
     }
   }, { timezone: TIMEZONE });
 
-  // ⏰ 3 PM Progress Reminder (Restored)
+  // ⏰ 3 PM Progress Reminder
   cron.schedule('0 15 * * *', async () => {
     console.log('⏰ Running 3 PM progress reminder...');
     try {
       const users = await User.find();
       for (const user of users) {
         const today = moment().tz(TIMEZONE).toDate();
-        const checklist = await getChecklistByDate(user._id, today);
-        if (checklist && !checklist.checkedIn) {
-          await sendTelegramMessage(bot, user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
+        const hasCheckedIn = user.checklists.some(c => moment(c.date).isSame(today, 'day') && c.checkedIn);
+        if (user.goalMemory && !hasCheckedIn) {
+          await bot.sendMessage(user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
           console.log(`✅ Sent 3 PM reminder to user ${user.telegramId}`);
         }
       }
@@ -113,16 +110,16 @@ function startDailyJobs(bot) {
     }
   }, { timezone: TIMEZONE });
 
-  // ⏰ 6 PM Progress Reminder (Restored)
+  // ⏰ 6 PM Progress Reminder
   cron.schedule('0 18 * * *', async () => {
     console.log('⏰ Running 6 PM progress reminder...');
     try {
       const users = await User.find();
       for (const user of users) {
         const today = moment().tz(TIMEZONE).toDate();
-        const checklist = await getChecklistByDate(user._id, today);
-        if (checklist && !checklist.checkedIn) {
-          await sendTelegramMessage(bot, user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted? I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
+        const hasCheckedIn = user.checklists.some(c => moment(c.date).isSame(today, 'day') && c.checkedIn);
+        if (user.goalMemory && !hasCheckedIn) {
+          await bot.sendMessage(user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted? I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
           console.log(`✅ Sent 6 PM reminder to user ${user.telegramId}`);
         }
       }
@@ -131,16 +128,16 @@ function startDailyJobs(bot) {
     }
   }, { timezone: TIMEZONE });
 
-  // ⏰ 9 PM Dedicated Check-in Reminder (Retained)
+  // ⏰ 9 PM Dedicated Check-in Reminder
   cron.schedule('0 21 * * *', async () => {
     console.log('⏰ Running 9 PM check-in reminder...');
     try {
       const users = await User.find();
       for (const user of users) {
         const today = moment().tz(TIMEZONE).toDate();
-        const checklist = await getChecklistByDate(user._id, today);
-        if (checklist && !checklist.checkedIn) {
-          await sendTelegramMessage(bot, user.telegramId, "Hey! It's 9 PM. Have you checked in today? Let me know how your day went!");
+        const hasCheckedIn = user.checklists.some(c => moment(c.date).isSame(today, 'day') && c.checkedIn);
+        if (user.goalMemory && !hasCheckedIn) {
+          await bot.sendMessage(user.telegramId, "Hey! It's 9 PM. Have you checked in today? Let me know how your day went!");
           console.log(`✅ Sent 9 PM reminder to user ${user.telegramId}`);
         }
       }
