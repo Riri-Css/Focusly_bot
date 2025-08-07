@@ -15,14 +15,13 @@ const {
   trackAIUsage,
   getModelForUser,
 } = require('../utils/subscriptionUtils');
-// ❌ The duplicate line below has been removed to fix the SyntaxError
 const { sendSubscriptionOptions } = require('../utils/telegram');
+const moment = require('moment-timezone'); // 🆕 Import moment for reliable date handling
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 🆕 Helper function to create the message text
 function createChecklistMessage(checklist) {
   let message = '**Daily Checklist**\n\n';
   checklist.tasks.forEach(task => {
@@ -32,7 +31,6 @@ function createChecklistMessage(checklist) {
   return message;
 }
 
-// 🆕 Helper function to create the inline keyboard with one button per task
 function createChecklistKeyboard(checklist) {
   const taskButtons = checklist.tasks.map(task => [{
     text: task.completed ? 'Undo' : 'Complete',
@@ -49,13 +47,12 @@ function createChecklistKeyboard(checklist) {
   };
 }
 
-// 🆕 Helper function to create the final message
 function createFinalCheckinMessage(user, checklist) {
   const completedTasksCount = checklist.tasks.filter(task => task.completed).length;
   const totalTasksCount = checklist.tasks.length;
   let message = `**Check-in Complete!** 🎉\n\n`;
   message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
-  message += `Your streak is now **${user.currentStreak || 0} days**! Great job!`;
+  // ⚠️ Streak logic is now handled in cronJobs.js, so we don't display it here.
   return message;
 }
 
@@ -67,6 +64,7 @@ async function handleMessage(bot, msg) {
   const userId = msg.from.id;
   const chatId = msg.chat.id;
   const userInput = msg.text?.trim();
+  const TIMEZONE = 'Africa/Lagos'; // 🆕 Define timezone here for consistency
 
   if (!userInput) {
     await bot.sendMessage(chatId, "Hmm, I didn’t catch that. Try sending it again.");
@@ -90,7 +88,6 @@ async function handleMessage(bot, msg) {
     }
 
     // 🆕 START OF NEW INTERACTIVE CHECK-IN FEATURE LOGIC
-    // This listener handles button clicks from the interactive checklist
     bot.on('callback_query', async (callbackQuery) => {
         const data = callbackQuery.data;
         const [action, taskId] = data.split('_');
@@ -99,8 +96,8 @@ async function handleMessage(bot, msg) {
 
         try {
           let user = await getUserByTelegramId(userId);
-          const today = new Date().toDateString();
-          const todayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === today);
+          const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+          const todayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).format('YYYY-MM-DD') === today);
 
           if (!todayChecklist) {
             await bot.answerCallbackQuery(callbackQuery.id, { text: "There's no checklist to update!" });
@@ -120,26 +117,20 @@ async function handleMessage(bot, msg) {
                 parse_mode: 'Markdown',
                 reply_markup: createChecklistKeyboard(todayChecklist)
               });
-              await bot.answerCallbackQuery(callback.id);
+              await bot.answerCallbackQuery(callbackQuery.id);
             }
           } else if (action === 'submit') {
-            const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
-            const yesterdayChecklist = user.checklists.find(c => new Date(c.date).toDateString() === yesterday);
-            
-            if (yesterdayChecklist && yesterdayChecklist.checkedIn) {
-              user.currentStreak = (user.currentStreak || 0) + 1;
-            } else {
-              user.currentStreak = 1;
-            }
-            if (user.currentStreak > (user.longestStreak || 0)) {
-              user.longestStreak = user.currentStreak;
-            }
-            
+            // ⚠️ The streak logic has been moved to the 11:59 PM cron job for reliability.
+            // We only update the checklist here.
             const completedTasksCount = todayChecklist.tasks.filter(task => task.completed).length;
             const totalTasksCount = todayChecklist.tasks.length;
 
             todayChecklist.checkedIn = true;
             todayChecklist.progressReport = `Checked in with ${completedTasksCount} out of ${totalTasksCount} tasks completed.`;
+            await user.save(); // 🆕 save the user after updating the checklist
+
+            // 🆕 Set the hasCheckedInTonight flag so the 9 PM reminder is skipped
+            user.hasCheckedInTonight = true;
             await user.save();
 
             const finalMessage = createFinalCheckinMessage(user, todayChecklist);
@@ -158,7 +149,7 @@ async function handleMessage(bot, msg) {
 
     // Handle the new `/checkin` command
     if (userInput.toLowerCase() === '/checkin') {
-      const today = new Date().toDateString();
+      const today = moment().tz(TIMEZONE).toDate();
       const todayChecklist = await getChecklistByDate(user._id, today);
       
       if (!todayChecklist) {
@@ -179,9 +170,14 @@ async function handleMessage(bot, msg) {
       });
       return;
     }
-    // 🆕 END OF NEW INTERACTIVE CHECK-IN FEATURE LOGIC
 
-    // 🆕 NEW: Handle the `/subscribe` command
+    // 🆕 The AI's response that creates a checklist should set a flag.
+    if (userInput.startsWith('/setgoal')) {
+      // ⚠️ You'll need to update your setGoal logic to handle this.
+      // For now, let's assume the AI's response does this.
+    }
+
+    // Handle the `/subscribe` command
     if (userInput.toLowerCase() === '/subscribe') {
         const now = new Date();
         const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
@@ -190,16 +186,12 @@ async function handleMessage(bot, msg) {
         if (isActive) {
             await bot.sendMessage(chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${user.subscriptionEndDate.toDateString()}**. Thank you for your continued support!`, { parse_mode: 'Markdown' });
         } else {
-            // User is not subscribed or subscription has expired, show them the options
             await sendSubscriptionOptions(bot, chatId);
         }
         return;
     }
-    // 🆕 END OF NEW COMMAND
-
-    // The old text-based check-in logic has been removed.
     
-    // --- Existing logic for /remember command ---
+    // Existing logic for /remember command
     if (userInput.startsWith('/remember')) {
       const textToRemember = userInput.replace('/remember', '').trim();
       if (textToRemember) {
@@ -212,6 +204,8 @@ async function handleMessage(bot, msg) {
     }
     
     // --- Existing AI-based conversation logic ---
+    // 🆕 Set this flag when the AI generates a checklist.
+    // For now, let's assume this happens when the goal is set.
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
@@ -232,6 +226,9 @@ async function handleMessage(bot, msg) {
       const goalSaved = await addGoalMemory(user, goal);
       if (goalSaved) {
         await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
+        // 🆕 This is where you should set the flag that the user has a checklist for today
+        user.hasSubmittedTasksToday = true;
+        await user.save();
       }
     }
     
