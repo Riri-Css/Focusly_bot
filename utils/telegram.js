@@ -1,12 +1,14 @@
 // File: src/utils/telegram.js
 
-// This function sends a message to a user
-async function sendTelegramMessage(telegramId, message) {
-  // Logic to send a message (assuming you have a bot instance here or pass it)
-  // For example:
-  // bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
-  // You might need to adjust this depending on how your bot instance is handled.
-  console.log(`Sending message to ${telegramId}: ${message}`);
+// 🆕 This function now requires the bot instance to send the message
+async function sendTelegramMessage(bot, telegramId, message) {
+  try {
+    // This is the actual code to send a message
+    await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+    console.log(`✅ Message sent to ${telegramId}`);
+  } catch (error) {
+    console.error(`❌ Failed to send message to ${telegramId}:`, error);
+  }
 }
 
 // 🆕 This function now creates the keyboard inline to avoid the 'inlineKeyboards' error
