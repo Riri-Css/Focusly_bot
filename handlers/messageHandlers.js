@@ -3,12 +3,13 @@ const { getSmartResponse } = require('../utils/getSmartResponse');
 const { 
   getUserByTelegramId, 
   getOrCreateUser, 
-  addGoalMemory, 
   addRecentChat, 
   addImportantMemory,
   updateUserField,
   updateChecklistStatus,
-  getChecklistByDate 
+  getChecklistByDate,
+  // 🆕 We will add this function to userController.js later
+  createChecklist 
 } = require('../controllers/userController'); 
 const {
   hasAIUsageAccess,
@@ -71,8 +72,6 @@ async function handleMessage(bot, msg) {
   }
 
   try {
-    // 🆕 This is the correct placement for the user creation logic.
-    // It is no longer blocked by the misplaced listener.
     let user = await getUserByTelegramId(userId);
     if (!user) {
       user = await getOrCreateUser(userId);
@@ -88,11 +87,7 @@ async function handleMessage(bot, msg) {
       await bot.sendMessage(chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
       return;
     }
-
-    // ❌ The bot.on('callback_query', ...) listener has been removed from here.
-    // It must be placed in your main index.js file.
-    
-    // Handle the new `/checkin` command
+    
     if (userInput.toLowerCase() === '/checkin') {
       const today = moment().tz(TIMEZONE).toDate();
       const todayChecklist = await getChecklistByDate(user._id, today);
@@ -116,13 +111,6 @@ async function handleMessage(bot, msg) {
       return;
     }
 
-    // 🆕 The AI's response that creates a checklist should set a flag.
-    if (userInput.startsWith('/setgoal')) {
-      // ⚠️ You'll need to update your setGoal logic to handle this.
-      // For now, let's assume the AI's response does this.
-    }
-
-    // Handle the `/subscribe` command
     if (userInput.toLowerCase() === '/subscribe') {
         const now = new Date();
         const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
@@ -136,7 +124,6 @@ async function handleMessage(bot, msg) {
         return;
     }
     
-    // Existing logic for /remember command
     if (userInput.startsWith('/remember')) {
       const textToRemember = userInput.replace('/remember', '').trim();
       if (textToRemember) {
@@ -148,48 +135,53 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    // --- Existing AI-based conversation logic ---
-    // 🆕 Set this flag when the AI generates a checklist.
-    // For now, let's assume this happens when the goal is set.
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
-    const { messages: aiReplyMessages, intent, goal } = await getSmartResponse(user, userInput, model, StrictMode);
+    // 🆕 We now receive more fields from the new JSON format
+    const { 
+      message, 
+      intent, 
+      challenge_message, 
+      weekly_goal, 
+      daily_tasks 
+    } = await getSmartResponse(user, userInput, model, StrictMode);
     
-    let aiReply = '';
-    if (aiReplyMessages && Array.isArray(aiReplyMessages)) {
-      aiReply = aiReplyMessages.filter(m => typeof m === 'string').join('\n\n');
-    } else if (typeof aiReplyMessages === 'string') {
-      aiReply = aiReplyMessages;
-    } else {
-      console.error("⚠️ Unexpected AI reply type:", typeof aiReplyRaw, aiReplyRaw);
-      await bot.sendMessage(chatId, "The AI didn’t respond properly. Please try again.");
-      return;
-    }
-
-    if (intent === 'create_checklist' && goal) {
-      const goalSaved = await addGoalMemory(user, goal);
-      if (goalSaved) {
-        await bot.sendMessage(chatId, "I've saved your goal! I'll generate a daily checklist for you.");
-        // 🆕 This is where you should set the flag that the user has a checklist for today
-        user.hasSubmittedTasksToday = true;
-        await user.save();
+    // 🆕 The new logic now handles the structured response from the AI
+    if (intent === 'create_checklist') {
+      // Send the challenge message first if the AI provided one
+      if (challenge_message) {
+        await bot.sendMessage(chatId, challenge_message);
+        // 🆕 Wait a moment to make the conversation feel more natural
+        await delay(1500); 
+      }
+      
+      if (daily_tasks && daily_tasks.length > 0) {
+        // 🆕 Create and save the new checklist in the database
+        const newChecklist = await createChecklist(user, weekly_goal, daily_tasks);
+        
+        const messageText = `Got it. Here is your weekly goal and checklist to get you started:\n\n**Weekly Goal:** ${weekly_goal}\n\n` + createChecklistMessage(newChecklist);
+        const keyboard = createChecklistKeyboard(newChecklist);
+        
+        await bot.sendMessage(chatId, messageText, {
+          reply_markup: keyboard,
+          parse_mode: 'Markdown'
+        });
+      } else {
+        await bot.sendMessage(chatId, "I couldn't create a checklist based on that. Can you be more specific?");
+      }
+    } else if (intent === 'give_advice') {
+      // 🆕 Handle specific advice and strategy from the AI
+      if (message) {
+        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      }
+    } else { // 🆕 This block now handles the 'general' intent
+      // 🆕 Send the general message from the AI.
+      if (message) {
+        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
       }
     }
     
-    if (!aiReply.trim()) {
-      console.error("⚠️ Empty AI reply:", aiReplyRaw);
-      await bot.sendMessage(chatId, "The AI didn’t return anything useful. Try rephrasing your message.");
-      return;
-    }
-    
-    const replyParts = aiReply.split('\n\n');
-    for (const part of replyParts) {
-      if (part.trim()) {
-        await bot.sendMessage(chatId, part.trim());
-        await delay(1000);
-      }
-    }
     await trackAIUsage(user, 'general');
     
   } catch (error) {
@@ -200,4 +192,7 @@ async function handleMessage(bot, msg) {
 
 module.exports = {
   handleMessage,
+  createChecklistMessage,
+  createChecklistKeyboard,
+  createFinalCheckinMessage
 };

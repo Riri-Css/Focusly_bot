@@ -3,8 +3,8 @@ const User = require('../models/user');
 const { getCurrentModelForUser } = require('../utils/subscriptionUtils');
 
 // Create or retrieve existing user
-async function getOrCreateUser(telegramId) { // 🆕 Removed 'username' parameter
-  let user = await User.findOne({ telegramId }); // 🆕 Added 'await'
+async function getOrCreateUser(telegramId) {
+  let user = await User.findOne({ telegramId });
 
   if (!user) {
     user = new User({
@@ -214,7 +214,40 @@ async function updateChecklistStatus(userId, date, checkedIn, progressReport) {
     await user.save();
     return checklist;
 }
-// --- END OF NEW FUNCTIONS ---
+
+// 🆕 New: Function to create a new checklist from AI tasks
+const createChecklist = async (user, weeklyGoal, dailyTasks) => {
+  try {
+    // 1. Save the weekly goal
+    if (weeklyGoal) {
+      user.goalMemory = {
+        text: weeklyGoal,
+        date: new Date()
+      };
+    }
+    
+    // 2. Create the checklist object
+    const today = new Date();
+    const newChecklist = {
+      date: today,
+      checkedIn: false,
+      tasks: dailyTasks.map(taskObj => ({
+        text: taskObj.task,
+        completed: false
+      })),
+    };
+
+    // 3. Push the new checklist to the user's checklists array
+    user.checklists.push(newChecklist);
+    await user.save();
+    
+    console.log(`✅ New checklist created for user ${user.telegramId}.`);
+    return newChecklist;
+  } catch (error) {
+    console.error("Error creating new checklist:", error);
+    return null;
+  }
+};
 
 module.exports = {
   getOrCreateUser,
@@ -229,5 +262,6 @@ module.exports = {
   addRecentChat,
   addImportantMemory,
   updateChecklistStatus,
-  getChecklistByDate // 🆕 Export the new function
+  getChecklistByDate,
+  createChecklist // 🆕 Export the new function
 };

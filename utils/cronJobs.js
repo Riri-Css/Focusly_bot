@@ -2,11 +2,12 @@
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const User = require('../models/user');
-// 🆕 Now we only need to import sendTelegramMessage
 const { sendTelegramMessage } = require('./telegram');
-const { generateChecklist } = require('./generateChecklist');
+// 🆕 New imports to support the new checklist flow
+const { getSmartResponse } = require('./getSmartResponse');
+const { createChecklist } = require('../controllers/userController');
 const { getModelForUser } = require('../utils/subscriptionUtils');
-const { getChecklistByDate } = require('../controllers/userController');
+const { createChecklistMessage, createChecklistKeyboard } = require('../handlers/messageHandlers');
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -29,25 +30,46 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 8 AM Daily Checklist Generator
-  cron.schedule('0 14 * * *', async () => {
+  cron.schedule('0 8 * * *', async () => { // 🆕 Corrected cron schedule to 8 AM
     console.log('⏰ Running 8 AM daily checklist generator...');
     try {
       const users = await User.find({ 'goalMemory.text': { $exists: true, $ne: '' } });
 
       for (const user of users) {
-        const model = await getModelForUser(user);
-        const goal = user.goalMemory.text;
+        // 🆕 This is the new, updated logic for generating and sending a checklist
+        try {
+          const today = moment().tz(TIMEZONE).toDate();
+          const model = await getModelForUser(user);
+          const goal = user.goalMemory.text;
+          
+          // Check if the user already has a checklist for today (to prevent duplicates)
+          const existingChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
 
-        const checklistMessage = await generateChecklist(user, goal, model);
-
-        if (checklistMessage) {
-          // 🆕 Pass the bot instance here
-          await sendTelegramMessage(bot, user.telegramId, checklistMessage);
-          console.log(`✅ Sent 8 AM checklist to user ${user.telegramId}`);
-        } else {
-          // 🆕 Pass the bot instance here
-          await sendTelegramMessage(bot, user.telegramId, "I couldn't generate a checklist for you today. Let's re-examine your goal.");
-          console.log(`⚠️ Failed to generate 8 AM checklist for user ${user.telegramId}`);
+          if (existingChecklist) {
+            console.log(`⚠️ User ${user.telegramId} already has a checklist for today. Skipping.`);
+            continue;
+          }
+          
+          // Get the new checklist from the AI
+          const aiResponse = await getSmartResponse(user, `My goal is: "${goal}". Please generate a new daily checklist based on this goal.`, model, false);
+          
+          if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
+            const newChecklist = await createChecklist(user, aiResponse.weekly_goal, aiResponse.daily_tasks);
+            
+            const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${aiResponse.weekly_goal}\n\n` + createChecklistMessage(newChecklist);
+            const keyboard = createChecklistKeyboard(newChecklist);
+            
+            await bot.sendMessage(user.telegramId, messageText, {
+              reply_markup: keyboard,
+              parse_mode: 'Markdown'
+            });
+            console.log(`✅ Sent 8 AM checklist to user ${user.telegramId}`);
+          } else {
+            await bot.sendMessage(user.telegramId, `I couldn't generate a checklist for you today. Let's re-examine your goal. Use the command /setgoal to update your goal.`);
+            console.log(`⚠️ Failed to generate 8 AM checklist for user ${user.telegramId}`);
+          }
+        } catch (err) {
+          console.error(`❌ Error processing checklist for user ${user.telegramId}:`, err.message);
         }
       }
     } catch (err) {
@@ -56,7 +78,6 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 12 PM Progress Reminder (Restored)
-  // 🆕 Cron schedule corrected to 12 PM
   cron.schedule('0 12 * * *', async () => {
     console.log('⏰ Running 12 PM reminder...');
     try {
@@ -65,7 +86,6 @@ function startDailyJobs(bot) {
         const today = new Date().toDateString();
         const hasChecklistToday = user.checklists.some(c => new Date(c.date).toDateString() === today);
         if (user.goalMemory && !hasChecklistToday) {
-          // 🆕 Pass the bot instance here
           await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working one them now and let me know if you need help.");
           console.log(`✅ Sent 12 PM reminder to user ${user.telegramId}`);
         }
@@ -84,7 +104,6 @@ function startDailyJobs(bot) {
         const today = moment().tz(TIMEZONE).toDate();
         const checklist = await getChecklistByDate(user._id, today);
         if (checklist && !checklist.checkedIn) {
-          // 🆕 Pass the bot instance here
           await sendTelegramMessage(bot, user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
           console.log(`✅ Sent 3 PM reminder to user ${user.telegramId}`);
         }
@@ -103,7 +122,6 @@ function startDailyJobs(bot) {
         const today = moment().tz(TIMEZONE).toDate();
         const checklist = await getChecklistByDate(user._id, today);
         if (checklist && !checklist.checkedIn) {
-          // 🆕 Pass the bot instance here
           await sendTelegramMessage(bot, user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted? I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
           console.log(`✅ Sent 6 PM reminder to user ${user.telegramId}`);
         }
@@ -122,7 +140,6 @@ function startDailyJobs(bot) {
         const today = moment().tz(TIMEZONE).toDate();
         const checklist = await getChecklistByDate(user._id, today);
         if (checklist && !checklist.checkedIn) {
-          // 🆕 Pass the bot instance here
           await sendTelegramMessage(bot, user.telegramId, "Hey! It's 9 PM. Have you checked in today? Let me know how your day went!");
           console.log(`✅ Sent 9 PM reminder to user ${user.telegramId}`);
         }
@@ -185,8 +202,7 @@ function startDailyJobs(bot) {
 You've completed **${completedTasksCount}** out of **${totalTasksCount}** tasks this past week!
 Your current check-in streak is **${user.currentStreak || 0} days**. Let's aim to keep it going strong! 💪
 `;
-          // 🆕 Pass the bot instance here
-          await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
+          await sendTelegramMessage(bot, user.telegramId, reflectionMessage, { parse_mode: 'Markdown' });
           console.log(`✅ Sent weekly reflection to user ${user.telegramId}`);
         }
       }
@@ -211,14 +227,13 @@ Your current check-in streak is **${user.currentStreak || 0} days**. Let's aim t
 
                 const totalTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
                     sum + checklist.tasks.length, 0);
-
+                
                 const reflectionMessage = `
 **Monthly Report** 🗓️
 This month, you completed **${completedTasksCount}** out of **${totalTasksCount}** tasks!
 Your longest streak so far is **${user.longestStreak || 0} days**. Great work! 🎉
 `;
-                // 🆕 Pass the bot instance here
-                await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
+                await sendTelegramMessage(bot, user.telegramId, reflectionMessage, { parse_mode: 'Markdown' });
                 console.log(`✅ Sent monthly report to user ${user.telegramId}`);
             }
         }
