@@ -29,7 +29,7 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 8 AM Daily Checklist Generator
-  cron.schedule('0 8 * * *', async () => {
+  cron.schedule('0 14 * * *', async () => {
     console.log('⏰ Running 8 AM daily checklist generator...');
     try {
       const users = await User.find({ 'goalMemory.text': { $exists: true, $ne: '' } });
@@ -66,7 +66,7 @@ function startDailyJobs(bot) {
         const hasChecklistToday = user.checklists.some(c => new Date(c.date).toDateString() === today);
         if (user.goalMemory && !hasChecklistToday) {
           // 🆕 Pass the bot instance here
-          await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! It seems your daily checklist wasn't generated. Let's make sure your goal is set correctly.");
+          await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working one them now and let me know if you need help.");
           console.log(`✅ Sent 12 PM reminder to user ${user.telegramId}`);
         }
       }
@@ -114,7 +114,7 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 9 PM Dedicated Check-in Reminder (Retained)
-  cron.schedule('12 2 * * *', async () => {
+  cron.schedule('0 21 * * *', async () => {
     console.log('⏰ Running 9 PM check-in reminder...');
     try {
       const users = await User.find();
