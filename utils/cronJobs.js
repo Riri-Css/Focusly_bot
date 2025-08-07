@@ -53,7 +53,7 @@ function startDailyJobs(bot) {
   }, { timezone: TIMEZONE });
 
   // ⏰ 12 PM Progress Reminder (Restored)
-  cron.schedule('0 1 55 * *', async () => {
+  cron.schedule('0 2 * * *', async () => {
     console.log('⏰ Running 12 PM reminder...');
     try {
       const users = await User.find();
