@@ -41,19 +41,30 @@ bot.on('message', (msg) => {
 });
 
 bot.on('callback_query', async (callbackQuery) => {
+    // 🆕 Add logging here to see what data is received
+    console.log('Received callback query:', callbackQuery.data);
+    
     const data = callbackQuery.data;
-    const [action, planOrTaskId] = data.split('_'); // 🆕 Changed variable name for clarity
+    const [action, planOrTaskId] = data.split('_'); 
     const userId = callbackQuery.from.id;
     const chatId = callbackQuery.message.chat.id;
     const TIMEZONE = 'Africa/Lagos';
 
     try {
+      // 🆕 Fetch the user document FIRST
       let user = await getUserByTelegramId(userId);
+
+      // 🆕 Check if a user was found
+      if (!user) {
+        console.error(`❌ User not found for callback query: ${userId}`);
+        await bot.answerCallbackQuery(callbackQuery.id, { text: "Something went wrong. Please start a new conversation." });
+        return;
+      }
 
       // 🆕 Handle Subscription Buttons
       if (action === 'subscribe') {
         const plan = planOrTaskId;
-        const amount = plan === 'premium' ? 1000 : 500; // Amount in kobo/cents
+        const amount = plan === 'premium' ? 1000 : 500;
 
         const paymentLink = await generatePaystackLink(user, amount, plan);
 
@@ -71,11 +82,10 @@ bot.on('callback_query', async (callbackQuery) => {
           await bot.sendMessage(chatId, "❌ I couldn't generate a payment link at the moment. Please try again later.");
         }
         await bot.answerCallbackQuery(callbackQuery.id);
-        return; // 🆕 Return here to prevent the rest of the code from running
+        return;
       }
 
       // --- Existing Checklist Logic ---
-      // This part now only runs if the action is not 'subscribe'
       const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
       const todayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).format('YYYY-MM-DD') === today);
 
