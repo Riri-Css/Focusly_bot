@@ -8,7 +8,6 @@ const {
   updateUserField,
   updateChecklistStatus,
   getChecklistByDate,
-  // 🆕 We will add this function to userController.js later
   createChecklist 
 } = require('../controllers/userController'); 
 const {
@@ -32,19 +31,33 @@ function createChecklistMessage(checklist) {
   return message;
 }
 
+// 🆕 This is the corrected function
 function createChecklistKeyboard(checklist) {
-  const taskButtons = checklist.tasks.map(task => [{
-    text: task.completed ? 'Undo' : 'Complete',
-    callback_data: `toggle_${task._id}`
+  const keyboard = checklist.tasks.map(task => {
+    const status = task.completed ? '✅ ' : '⬜️ ';
+    return [{
+      text: status + task.text,
+      // 🆕 The callback_data now uses a JSON string
+      callback_data: JSON.stringify({
+        action: 'toggle_task',
+        checklistId: checklist._id,
+        taskId: task._id
+      })
+    }];
+  });
+
+  // Add the "Submit Check-in" button
+  keyboard.push([{
+    text: '➡️ Submit Check-in',
+    // 🆕 The callback_data for the submit button is now also a JSON string
+    callback_data: JSON.stringify({
+      action: 'submit_checkin',
+      checklistId: checklist._id
+    })
   }]);
 
-  const submitButton = [{
-    text: 'Submit Check-in',
-    callback_data: 'submit'
-  }];
-
   return {
-    inline_keyboard: [...taskButtons, submitButton]
+    inline_keyboard: keyboard
   };
 }
 
@@ -138,7 +151,6 @@ async function handleMessage(bot, msg) {
     await addRecentChat(user, userInput);
     
     const StrictMode = user.missedCheckins >= 3;
-    // 🆕 We now receive more fields from the new JSON format
     const { 
       message, 
       intent, 
@@ -147,17 +159,13 @@ async function handleMessage(bot, msg) {
       daily_tasks 
     } = await getSmartResponse(user, userInput, model, StrictMode);
     
-    // 🆕 The new logic now handles the structured response from the AI
     if (intent === 'create_checklist') {
-      // Send the challenge message first if the AI provided one
       if (challenge_message) {
         await bot.sendMessage(chatId, challenge_message);
-        // 🆕 Wait a moment to make the conversation feel more natural
         await delay(1500); 
       }
       
       if (daily_tasks && daily_tasks.length > 0) {
-        // 🆕 Create and save the new checklist in the database
         const newChecklist = await createChecklist(user, weekly_goal, daily_tasks);
         
         const messageText = `Got it. Here is your weekly goal and checklist to get you started:\n\n**Weekly Goal:** ${weekly_goal}\n\n` + createChecklistMessage(newChecklist);
@@ -171,12 +179,10 @@ async function handleMessage(bot, msg) {
         await bot.sendMessage(chatId, "I couldn't create a checklist based on that. Can you be more specific?");
       }
     } else if (intent === 'give_advice') {
-      // 🆕 Handle specific advice and strategy from the AI
       if (message) {
         await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
       }
-    } else { // 🆕 This block now handles the 'general' intent
-      // 🆕 Send the general message from the AI.
+    } else {
       if (message) {
         await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
       }
