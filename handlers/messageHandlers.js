@@ -1,11 +1,13 @@
 // File: src/handlers/messageHandlers.js
+// This version includes the daily check-in reset logic and AI usage tracking.
 const { 
   getUserByTelegramId, 
   getOrCreateUser, 
   addRecentChat, 
   addImportantMemory,
   createChecklist,
-  getChecklistByDate
+  getChecklistByDate,
+  handleDailyCheckinReset // 🆕 Imported the new daily reset function
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { getSmartResponse } = require('../utils/getSmartResponse');
@@ -114,7 +116,6 @@ async function handleMessage(bot, msg) {
     return;
   }
 
-  // Wrapped the entire function logic in a single try/catch block
   try {
     const userId = msg.from.id;
     const chatId = msg.chat.id;
@@ -128,22 +129,17 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    let user = await getUserByTelegramId(userId);
+    let user = await getOrCreateUser(userId); // 🆕 Use getOrCreateUser for consistency
+
+    // 🆕 Call the daily check-in reset logic at the beginning of message handling
+    await handleDailyCheckinReset(user);
 
     const command = userInput.toLowerCase();
 
     if (command === '/start') {
-      if (!user) {
-        const newUser = new User({
-          telegramId: userId,
-          username: msg.from.username,
-          firstName: msg.from.first_name,
-          lastName: msg.from.last_name,
-          awaitingGoal: true,
-          isSubscribed: false,
-          checkinStreak: 0,
-        });
-        await newUser.save();
+      if (user.onboardingStep === 'start') {
+        user.onboardingStep = 'awaiting_goal';
+        await user.save();
         return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
       } else {
         return sendTelegramMessage(bot, chatId, `Welcome back, ${msg.from.first_name}! You've already started. Use the /checkin command to get your checklist.`);
@@ -151,9 +147,6 @@ async function handleMessage(bot, msg) {
     }
 
     if (command === '/subscription') {
-      if (!user) {
-        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
-      }
       const now = moment().tz(TIMEZONE).toDate();
       const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
       const isActive = user.subscriptionStatus === 'active' && !isExpired;
@@ -167,8 +160,8 @@ async function handleMessage(bot, msg) {
     }
 
     if (command === '/checkin') {
-      if (!user) {
-        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
+      if (!user.goalMemory || !user.goalMemory.text) {
+        return sendTelegramMessage(bot, chatId, "You don't have a goal set yet! Use `/start` or `/setgoal` to define your weekly goal.");
       }
       const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
       const checklist = await getChecklistByDate(user.telegramId, today);
@@ -186,9 +179,6 @@ async function handleMessage(bot, msg) {
     }
 
     if (command.startsWith('/remember')) {
-      if (!user) {
-        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
-      }
       const textToRemember = command.replace('/remember', '').trim();
       if (textToRemember) {
         await addImportantMemory(user, textToRemember);
@@ -199,10 +189,10 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    if (user && user.awaitingGoal) {
+    if (user && user.onboardingStep === 'awaiting_goal') {
       if (userInput && userInput.length > 5) {
         user.goalMemory.text = userInput;
-        user.awaitingGoal = false;
+        user.onboardingStep = 'onboarded';
         await user.save();
         return sendTelegramMessage(bot, chatId, "Awesome! I've set your weekly goal. I'll send you a daily checklist to help you stay on track. Just type /checkin when you're ready to see it.");
       } else {
@@ -250,7 +240,12 @@ async function handleMessage(bot, msg) {
       await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that command. Please focus on your current goal and use the /checkin command when you're ready.");
     }
     
-    await trackAIUsage(user, 'general');
+    // We only track AI usage if it was actually used (i.e. a response was generated)
+    if (intent !== 'create_checklist' && message) {
+        await trackAIUsage(user, 'general');
+    } else if (intent === 'create_checklist') {
+        await trackAIUsage(user, 'checklist');
+    }
     
   } catch (error) {
     console.error("❌ Error handling message:", error);
