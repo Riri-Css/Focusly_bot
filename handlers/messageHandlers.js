@@ -1,4 +1,4 @@
-// src/handlers/messageHandlers.js
+// File: src/handlers/messageHandlers.js
 const { 
   getUserByTelegramId, 
   getOrCreateUser, 
@@ -97,6 +97,7 @@ function delay(ms) {
 
 /**
  * Handles incoming messages from the user.
+ * This function has been restructured to handle commands first.
  * @param {object} bot - The Telegram bot instance.
  * @param {object} msg - The message object from Telegram.
  */
@@ -121,8 +122,11 @@ async function handleMessage(bot, msg) {
   
   let user = await getUserByTelegramId(userId);
 
-  // Handle /start command
-  if (userInput.toLowerCase() === '/start') {
+  // --- COMMAND HANDLING ---
+  // All commands are now handled at the beginning of the function
+  const command = userInput.toLowerCase();
+
+  if (command === '/start') {
       if (!user) {
           const newUser = new User({
               telegramId: userId,
@@ -140,8 +144,9 @@ async function handleMessage(bot, msg) {
       }
   }
 
-  // Handle /subscribe command explicitly
-  if (userInput.toLowerCase() === '/subscribe') {
+  // Final check before the subscription command
+  console.log('Final check: Reached subscription command handler.');
+  if (command === '/subscription') {
       if (!user) {
           return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
       }
@@ -157,8 +162,7 @@ async function handleMessage(bot, msg) {
       return;
   }
 
-  // Handle /checkin command
-  if (userInput.toLowerCase() === '/checkin') {
+  if (command === '/checkin') {
       if (!user) {
           return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
       }
@@ -177,6 +181,20 @@ async function handleMessage(bot, msg) {
       }
   }
 
+  if (command.startsWith('/remember')) {
+      if (!user) {
+          return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
+      }
+      const textToRemember = command.replace('/remember', '').trim();
+      if (textToRemember) {
+          await addImportantMemory(user, textToRemember);
+          await sendTelegramMessage(bot, chatId, "Got it. I've added that to your long-term memory.");
+      } else {
+          await sendTelegramMessage(bot, chatId, "What should I remember? Use the command like this: /remember [your important note]");
+      }
+      return;
+  }
+  
   // If a user exists and is awaiting a goal, handle that input.
   if (user && user.awaitingGoal) {
     if (userInput && userInput.length > 5) {
@@ -189,7 +207,8 @@ async function handleMessage(bot, msg) {
     }
   }
 
-  // AI-based smart response for anything else
+  // --- AI-BASED SMART RESPONSE ---
+  // This section is only executed if the message is NOT a recognized command.
   try {
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
