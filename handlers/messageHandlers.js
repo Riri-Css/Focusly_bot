@@ -94,7 +94,7 @@ function createChecklistKeyboard(checklist) {
 function createFinalCheckinMessage(user, checklist) {
   const completedTasksCount = checklist.tasks.filter(task => task.completed).length;
   const totalTasksCount = checklist.tasks.length;
-  let message = `**Check-in Complete!** �\n\n`;
+  let message = `**Check-in Complete!** 🎉\n\n`;
   message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
   return message;
 }
