@@ -1,10 +1,40 @@
-// src/handlers/callbackHandlers.js
+// File: src/handlers/callbackHandlers.js
 const User = require('../models/user');
 const { createChecklistMessage, createChecklistKeyboard, sendTelegramMessage } = require('./messageHandlers');
 const { getChecklistByDate } = require('../controllers/userController');
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
+
+/**
+ * Main handler for all incoming callback queries.
+ * It parses the callback data and routes it to the correct function.
+ * @param {object} bot - The Telegram bot instance.
+ * @param {object} callbackQuery - The callback query object from Telegram.
+ */
+async function handleCallbackQuery(bot, callbackQuery) {
+    const { data } = callbackQuery;
+    
+    try {
+        const parsedData = JSON.parse(data);
+        console.log('✅ Parsed callback query data:', parsedData);
+
+        switch (parsedData.action) {
+            case 'toggle_task':
+                await handleTaskToggle(bot, callbackQuery, parsedData);
+                break;
+            case 'submit_checkin':
+                await handleSubmitCheckin(bot, callbackQuery, parsedData);
+                break;
+            default:
+                await bot.answerCallbackQuery(callbackQuery.id, { text: "Unknown action." });
+                break;
+        }
+    } catch (error) {
+        console.error('❌ Error parsing callback data or handling action:', error);
+        await bot.answerCallbackQuery(callbackQuery.id, { text: "An error occurred." });
+    }
+}
 
 /**
  * Handles toggling the completion status of a checklist task.
@@ -15,7 +45,6 @@ const TIMEZONE = 'Africa/Lagos';
 async function handleTaskToggle(bot, callbackQuery, parsedData) {
     const { from, message } = callbackQuery;
     const telegramId = from.id;
-    // 🆕 Use the already parsed data
     const { checklistId, taskId } = parsedData;
 
     try {
@@ -34,12 +63,10 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
             return bot.answerCallbackQuery(callbackQuery.id, { text: "Task not found." });
         }
 
-        // Toggle the completion status
         task.completed = !task.completed;
 
         await user.save();
 
-        // Update the message in the chat
         const updatedKeyboard = createChecklistKeyboard(checklist);
         const updatedMessageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
         
@@ -68,7 +95,6 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
 async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
     const { from, message } = callbackQuery;
     const telegramId = from.id;
-    // 🆕 Use the already parsed data
     const { checklistId } = parsedData;
 
     try {
@@ -82,14 +108,11 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
             return bot.answerCallbackQuery(callbackQuery.id, { text: "Checklist not found." });
         }
 
-        // Set the checklist as checked in
         checklist.checkedIn = true;
         
-        // Count completed tasks
         const completedTasks = checklist.tasks.filter(task => task.completed).length;
         const totalTasks = checklist.tasks.length;
         
-        // Build a dynamic message based on performance
         let completionMessage;
         if (completedTasks === totalTasks) {
             completionMessage = `**Amazing! You completed all your tasks today!** 🎉 Keep up this incredible momentum! Your consistency will lead to great results.`;
@@ -99,16 +122,12 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
             completionMessage = `**That's okay!** You can't win them all, but every day is a new chance to try. Let's make tomorrow a day of progress!`;
         }
 
-        // Send the confirmation message
         await sendTelegramMessage(bot, telegramId, `✅ **Check-in Successful!**\n\n${completionMessage}\n\nI've saved your progress for today. Now, rest well and prepare for an even better day tomorrow!`);
 
-        // Save the updated user document
         await user.save();
         
-        // Answer the callback query and clear the original checklist message
         await bot.answerCallbackQuery(callbackQuery.id, { text: "Check-in successful! Your progress is saved." });
         
-        // Delete the original message to keep the chat clean
         await bot.deleteMessage(message.chat.id, message.message_id);
 
         console.log(`✅ User ${telegramId} submitted check-in for checklist ${checklistId}.`);
@@ -120,6 +139,7 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
 }
 
 module.exports = {
+    handleCallbackQuery,
     handleTaskToggle,
     handleSubmitCheckin
 };
