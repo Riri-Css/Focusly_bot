@@ -8,11 +8,15 @@ const TIMEZONE = 'Africa/Lagos';
 
 /**
  * Handles toggling the completion status of a checklist task.
+ * @param {object} bot - The Telegram bot instance.
+ * @param {object} callbackQuery - The callback query object from Telegram.
+ * @param {object} parsedData - The already parsed data from the callback query.
  */
-async function handleTaskToggle(bot, callbackQuery) {
-    const { from, data, message } = callbackQuery;
+async function handleTaskToggle(bot, callbackQuery, parsedData) {
+    const { from, message } = callbackQuery;
     const telegramId = from.id;
-    const { checklistId, taskId } = JSON.parse(data);
+    // 🆕 Use the already parsed data
+    const { checklistId, taskId } = parsedData;
 
     try {
         const user = await User.findOne({ telegramId });
@@ -57,11 +61,15 @@ async function handleTaskToggle(bot, callbackQuery) {
 
 /**
  * Handles the final submission of a user's checklist.
+ * @param {object} bot - The Telegram bot instance.
+ * @param {object} callbackQuery - The callback query object from Telegram.
+ * @param {object} parsedData - The already parsed data from the callback query.
  */
-async function handleSubmitCheckin(bot, callbackQuery) {
-    const { from, data, message } = callbackQuery;
+async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
+    const { from, message } = callbackQuery;
     const telegramId = from.id;
-    const { checklistId } = JSON.parse(data);
+    // 🆕 Use the already parsed data
+    const { checklistId } = parsedData;
 
     try {
         const user = await User.findOne({ telegramId });

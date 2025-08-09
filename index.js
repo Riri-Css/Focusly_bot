@@ -3,18 +3,18 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const TelegramBot = require('node-telegram-bot-api');
-const { handleMessage } = require('./handlers/messageHandlers');
+const { handleMessage, createChecklistMessage, createChecklistKeyboard, createFinalCheckinMessage } = require('./handlers/messageHandlers');
 const webhookRoutes = require('./utils/webhook');
 const paystackWebhook = require('./routes/paystackWebhook');
 const moment = require('moment-timezone');
 const { getUserByTelegramId, updateUserField } = require('./controllers/userController');
-const { createChecklistMessage, createChecklistKeyboard, createFinalCheckinMessage } = require('./handlers/messageHandlers');
 const { generatePaystackLink } = require('./utils/paystackUtils');
-const { handleTaskToggle, handleSubmitCheckin } = require('./handlers/callbackHandlers'); // 🆕 Import the new handlers
+const { handleTaskToggle, handleSubmitCheckin } = require('./handlers/callbackHandlers');
 
 const app = express();
-
 const bot = require('./botInstance');
+
+// Webhook setup
 bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
 
 app.use(express.json({
@@ -30,6 +30,7 @@ app.post(`/webhook`, (req, res) => {
 
 app.use('/paystack/webhook', paystackWebhook);
 
+// Database connection
 mongoose.connect(process.env.MONGODB_URI, {
   useUnifiedTopology: true,
 }).then(() => {
@@ -38,25 +39,29 @@ mongoose.connect(process.env.MONGODB_URI, {
   console.error('❌ MongoDB connection error:', err);
 });
 
+// Main message handler
 bot.on('message', (msg) => {
   handleMessage(bot, msg);
 });
 
-// 🆕 This is the updated and integrated callback query handler
+// Main callback query handler
 bot.on('callback_query', async (callbackQuery) => {
+  console.log('🔔 Callback query received at the top level.');
+  
   const { from, data } = callbackQuery;
   const userId = from.id;
   const chatId = callbackQuery.message.chat.id;
 
   try {
+    // 🆕 Parse the data ONCE here
     const parsedData = JSON.parse(data);
     const { action } = parsedData;
 
-    // Route to the appropriate handler based on the button action
+    // Route to the appropriate handler based on the button action, passing the parsed data
     if (action === 'toggle_task') {
-      await handleTaskToggle(bot, callbackQuery);
+      await handleTaskToggle(bot, callbackQuery, parsedData);
     } else if (action === 'submit_checkin') {
-      await handleSubmitCheckin(bot, callbackQuery);
+      await handleSubmitCheckin(bot, callbackQuery, parsedData);
     } else if (action === 'subscribe') {
       const plan = parsedData.plan;
       const amount = plan === 'premium' ? 1000 : 500;
@@ -91,6 +96,7 @@ bot.on('callback_query', async (callbackQuery) => {
   }
 });
 
+// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
