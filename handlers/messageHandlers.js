@@ -79,6 +79,12 @@ async function handleMessage(bot, msg) {
   const userInput = msg.text?.trim();
   const TIMEZONE = 'Africa/Lagos'; 
 
+// 🆕 START OF DEBUG LOG
+  console.log(`🔍 Received raw message: "${msg.text}"`);
+  console.log(`🔍 Trimmed user input: "${userInput}"`);
+  // 🆕 END OF DEBUG LOG
+  
+
   if (!userInput) {
     await bot.sendMessage(chatId, "Hmm, I didn’t catch that. Try sending it again.");
     return;
