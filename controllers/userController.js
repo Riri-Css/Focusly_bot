@@ -274,7 +274,7 @@
     };
     checklist.progressReport = ''; // Reset progress report
     try {
-        await user.save();
+        //await user.save();
 
         // Notify the user
         const message = `✅ You have successfully checked in for today! Your checklist is now ready.`;
