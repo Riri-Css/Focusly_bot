@@ -119,7 +119,7 @@ function startDailyJobs(bot) {
         const today = moment().tz(TIMEZONE).toDate();
         const hasCheckedIn = user.checklists.some(c => moment(c.date).isSame(today, 'day') && c.checkedIn);
         if (user.goalMemory && !hasCheckedIn) {
-          await bot.sendMessage(user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will be accepted? I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
+          await bot.sendMessage(user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will not be accepted. I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
           console.log(`✅ Sent 6 PM reminder to user ${user.telegramId}`);
         }
       }
