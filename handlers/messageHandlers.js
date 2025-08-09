@@ -23,11 +23,11 @@ const TIMEZONE = 'Africa/Lagos';
  * @param {object} [options={}] - Additional options for the message.
  */
 async function sendTelegramMessage(bot, chatId, messageText, options = {}) {
-    try {
-        await bot.sendMessage(chatId, messageText, { parse_mode: 'Markdown', ...options });
-    } catch (error) {
-        console.error('❌ Error sending Telegram message:', error);
-    }
+  try {
+    await bot.sendMessage(chatId, messageText, { parse_mode: 'Markdown', ...options });
+  } catch (error) {
+    console.error('❌ Error sending Telegram message:', error);
+  }
 }
 
 /**
@@ -36,14 +36,14 @@ async function sendTelegramMessage(bot, chatId, messageText, options = {}) {
  * @returns {string} The formatted message string.
  */
 function createChecklistMessage(checklist) {
-    if (!checklist || checklist.tasks.length === 0) {
-        return "You have no tasks for today.";
-    }
-    const tasksText = checklist.tasks.map(task => {
-        const status = task.completed ? '✅' : '⬜️';
-        return `${status} ${task.text}`;
-    }).join('\n');
-    return tasksText;
+  if (!checklist || !checklist.tasks || checklist.tasks.length === 0) {
+    return "You have no tasks for today.";
+  }
+  const tasksText = checklist.tasks.map(task => {
+    const status = task.completed ? '✅' : '⬜️';
+    return `${status} ${task.text}`;
+  }).join('\n');
+  return tasksText;
 }
 
 /**
@@ -52,37 +52,37 @@ function createChecklistMessage(checklist) {
  * @returns {object} The inline keyboard object.
  */
 function createChecklistKeyboard(checklist) {
-    // Check if checklist or checklist.tasks is null/undefined
-    if (!checklist || !checklist.tasks || !Array.isArray(checklist.tasks)) {
-        console.error("❌ Invalid checklist provided to createChecklistKeyboard.");
-        return { inline_keyboard: [] };
-    }
+  // Check if checklist or checklist.tasks is null/undefined
+  if (!checklist || !checklist.tasks || !Array.isArray(checklist.tasks)) {
+    console.error("❌ Invalid checklist provided to createChecklistKeyboard.");
+    return { inline_keyboard: [] };
+  }
 
-    const taskButtons = checklist.tasks.map(task => {
-        const buttonText = task.completed ? `✅ ${task.text}` : `⬜️ ${task.text}`;
-        return [{
-            text: buttonText,
-            // 🆕 Simplified and guaranteed JSON string
-            callback_data: JSON.stringify({
-                action: 'toggle_task',
-                checklistId: checklist.id,
-                taskId: task.id
-            })
-        }];
-    });
-
-    const submitButton = [{
-        text: '✅ Submit Check-in',
-        // 🆕 Simplified and guaranteed JSON string
-        callback_data: JSON.stringify({
-            action: 'submit_checkin',
-            checklistId: checklist.id
-        })
+  const taskButtons = checklist.tasks.map(task => {
+    const buttonText = task.completed ? `✅ ${task.text}` : `⬜️ ${task.text}`;
+    return [{
+      text: buttonText,
+      // Simplified and guaranteed JSON string
+      callback_data: JSON.stringify({
+        action: 'toggle_task',
+        checklistId: checklist.id,
+        taskId: task.id
+      })
     }];
+  });
 
-    return {
-        inline_keyboard: [...taskButtons, submitButton]
-    };
+  const submitButton = [{
+    text: '✅ Submit Check-in',
+    // Simplified and guaranteed JSON string
+    callback_data: JSON.stringify({
+      action: 'submit_checkin',
+      checklistId: checklist.id
+    })
+  }];
+
+  return {
+    inline_keyboard: [...taskButtons, submitButton]
+  };
 }
 
 /**
@@ -92,15 +92,15 @@ function createChecklistKeyboard(checklist) {
  * @returns {string} The formatted message string.
  */
 function createFinalCheckinMessage(user, checklist) {
-    const completedTasksCount = checklist.tasks.filter(task => task.completed).length;
-    const totalTasksCount = checklist.tasks.length;
-    let message = `**Check-in Complete!** 🎉\n\n`;
-    message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
-    return message;
+  const completedTasksCount = checklist.tasks.filter(task => task.completed).length;
+  const totalTasksCount = checklist.tasks.length;
+  let message = `**Check-in Complete!** �\n\n`;
+  message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
+  return message;
 }
 
 function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -114,7 +114,7 @@ async function handleMessage(bot, msg) {
     return;
   }
 
-  // 🆕 Wrapped the entire function logic in a single try/catch block
+  // Wrapped the entire function logic in a single try/catch block
   try {
     const userId = msg.from.id;
     const chatId = msg.chat.id;
@@ -133,70 +133,70 @@ async function handleMessage(bot, msg) {
     const command = userInput.toLowerCase();
 
     if (command === '/start') {
-        if (!user) {
-            const newUser = new User({
-                telegramId: userId,
-                username: msg.from.username,
-                firstName: msg.from.first_name,
-                lastName: msg.from.last_name,
-                awaitingGoal: true,
-                isSubscribed: false,
-                checkinStreak: 0,
-            });
-            await newUser.save();
-            return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
-        } else {
-            return sendTelegramMessage(bot, chatId, `Welcome back, ${msg.from.first_name}! You've already started. Use the /checkin command to get your checklist.`);
-        }
+      if (!user) {
+        const newUser = new User({
+          telegramId: userId,
+          username: msg.from.username,
+          firstName: msg.from.first_name,
+          lastName: msg.from.last_name,
+          awaitingGoal: true,
+          isSubscribed: false,
+          checkinStreak: 0,
+        });
+        await newUser.save();
+        return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
+      } else {
+        return sendTelegramMessage(bot, chatId, `Welcome back, ${msg.from.first_name}! You've already started. Use the /checkin command to get your checklist.`);
+      }
     }
 
     if (command === '/subscription') {
-        if (!user) {
-            return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
-        }
-        const now = moment().tz(TIMEZONE).toDate();
-        const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
-        const isActive = user.subscriptionStatus === 'active' && !isExpired;
+      if (!user) {
+        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
+      }
+      const now = moment().tz(TIMEZONE).toDate();
+      const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
+      const isActive = user.subscriptionStatus === 'active' && !isExpired;
 
-        if (isActive) {
-            await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
-        } else {
-            await sendSubscriptionOptions(bot, chatId);
-        }
-        return;
+      if (isActive) {
+        await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
+      } else {
+        await sendSubscriptionOptions(bot, chatId);
+      }
+      return;
     }
 
     if (command === '/checkin') {
-        if (!user) {
-            return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
-        }
-        const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
-        const checklist = await getChecklistByDate(user.telegramId, today);
-        if (checklist) {
-            if (checklist.checkedIn) {
-                return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
-            } else {
-                const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
-                const keyboard = createChecklistKeyboard(checklist);
-                return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
-            }
+      if (!user) {
+        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
+      }
+      const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+      const checklist = await getChecklistByDate(user.telegramId, today);
+      if (checklist) {
+        if (checklist.checkedIn) {
+          return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
         } else {
-            return sendTelegramMessage(bot, chatId, "You don't have a checklist for today yet. Use `/setgoal` to set your goal first.");
+          const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
+          const keyboard = createChecklistKeyboard(checklist);
+          return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
         }
+      } else {
+        return sendTelegramMessage(bot, chatId, "You don't have a checklist for today yet. Use `/setgoal` to set your goal first.");
+      }
     }
 
     if (command.startsWith('/remember')) {
-        if (!user) {
-            return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
-        }
-        const textToRemember = command.replace('/remember', '').trim();
-        if (textToRemember) {
-            await addImportantMemory(user, textToRemember);
-            await sendTelegramMessage(bot, chatId, "Got it. I've added that to your long-term memory.");
-        } else {
-            await sendTelegramMessage(bot, chatId, "What should I remember? Use the command like this: /remember [your important note]");
-        }
-        return;
+      if (!user) {
+        return sendTelegramMessage(bot, chatId, "Please start by using the /start command first.");
+      }
+      const textToRemember = command.replace('/remember', '').trim();
+      if (textToRemember) {
+        await addImportantMemory(user, textToRemember);
+        await sendTelegramMessage(bot, chatId, "Got it. I've added that to your long-term memory.");
+      } else {
+        await sendTelegramMessage(bot, chatId, "What should I remember? Use the command like this: /remember [your important note]");
+      }
+      return;
     }
     
     if (user && user.awaitingGoal) {
