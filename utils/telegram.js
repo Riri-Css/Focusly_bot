@@ -1,35 +1,53 @@
 // File: src/utils/telegram.js
+const moment = require('moment-timezone');
 
-// 🆕 This function now requires the bot instance to send the message
-async function sendTelegramMessage(bot, telegramId, message) {
-  try {
-    // This is the actual code to send a message
-    await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
-    console.log(`✅ Message sent to ${telegramId}`);
-  } catch (error) {
-    console.error(`❌ Failed to send message to ${telegramId}:`, error);
-  }
+/**
+ * Creates the inline keyboard for subscription options with JSON callback data.
+ * @param {boolean} isPremium - True if the user is already premium.
+ * @returns {Array<Array<object>>} The inline keyboard.
+ */
+function getSubscriptionOptions(isPremium) {
+    if (isPremium) {
+        return [[{
+            text: "You are already a premium subscriber! ✅",
+            callback_data: JSON.stringify({ action: 'already_premium' })
+        }]];
+    } else {
+        return [
+            [{
+                text: "✨ Premium (₦10,000/month)",
+                callback_data: JSON.stringify({ action: 'subscribe', plan: 'premium' })
+            }],
+            [{
+                text: "💰 Basic (₦2,000/month)",
+                callback_data: JSON.stringify({ action: 'subscribe', plan: 'basic' })
+            }],
+            [{
+                text: "⬅️ Cancel",
+                callback_data: JSON.stringify({ action: 'cancel' })
+            }]
+        ];
+    }
 }
 
-// 🆕 This function now creates the keyboard inline to avoid the 'inlineKeyboards' error
-async function sendSubscriptionOptions(bot, chatId) {
-  const message = 'Ready to achieve your goals? Choose a plan below to get started!';
-  
-  // 🆕 The inline keyboard is created directly here.
-  const keyboard = {
-    inline_keyboard: [
-      [{ text: 'Premium Plan (GPT-4o) 🚀', callback_data: 'subscribe_premium' }],
-      [{ text: 'Basic Plan (GPT-3.5) ✨', callback_data: 'subscribe_basic' }],
-    ],
-  };
-  
-  await bot.sendMessage(chatId, message, { 
-    reply_markup: keyboard,
-    parse_mode: 'Markdown' 
-  });
+/**
+ * Sends a message with subscription options.
+ * @param {object} bot - The Telegram bot instance.
+ * @param {number} chatId - The chat ID.
+ * @param {boolean} isPremium - True if the user is already premium.
+ */
+async function sendSubscriptionOptions(bot, chatId, isPremium) {
+    try {
+        await bot.sendMessage(chatId, "Choose a subscription plan:", {
+            reply_markup: {
+                inline_keyboard: getSubscriptionOptions(isPremium)
+            }
+        });
+    } catch (error) {
+        console.error("❌ Error sending subscription options:", error);
+    }
 }
 
 module.exports = {
-  sendTelegramMessage,
-  sendSubscriptionOptions, // Correctly exporting the function
+    sendSubscriptionOptions
 };
