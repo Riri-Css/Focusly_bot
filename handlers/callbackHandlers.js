@@ -16,6 +16,10 @@ const TIMEZONE = 'Africa/Lagos';
  */
 async function handleCallbackQuery(bot, callbackQuery) {
     const { data, id: callbackId } = callbackQuery;
+
+    console.log('--- Debugging Callback Query ---');
+    console.log('Received raw callback data:', data);
+
     
     try {
         const parsedData = JSON.parse(data);
