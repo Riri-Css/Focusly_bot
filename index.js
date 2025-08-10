@@ -2,37 +2,31 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const TelegramBot = require('node-telegram-bot-api');
+
+// ✅ Import the SINGLE bot instance from botInstance.js
+const bot = require('./botInstance');
 
 // Import handlers for different types of updates
 const { handleMessage } = require('./handlers/messageHandlers');
 const { handleCallbackQuery } = require('./handlers/callbackHandlers');
 const paystackWebhook = require('./routes/paystackWebhook');
-const moment = require('moment-timezone');
 
 const app = express();
-const bot = new TelegramBot(process.env.BOT_TOKEN);
 
-// Set Webhook
+// Webhook setup
 bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
 
 app.use(express.json());
 
 // Main webhook endpoint that routes updates
 app.post(`/webhook`, async (req, res) => {
-
-    console.log('--- Webhook Received ---');
-    console.log('Request body:', req.body);
-
     try {
         const update = req.body;
         
         if (update.message) {
-            // Route to message handler
             console.log("📩 Incoming message:", update.message.text);
             await handleMessage(bot, update.message);
         } else if (update.callback_query) {
-            // Route to callback query handler
             console.log("🔘 Incoming callback query:", update.callback_query.data);
             await handleCallbackQuery(bot, update.callback_query);
         }
