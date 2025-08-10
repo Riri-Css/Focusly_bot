@@ -1,0 +1,51 @@
+// File: src/utils/paystackUtils.js
+const axios = require('axios');
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const CALLBACK_URL = `${process.env.RENDER_EXTERNAL_URL}/paystack/webhook`;
+
+/**
+ * Generates a Paystack payment authorization URL.
+ * @param {object} user - The user object.
+ * @param {number} amount - The amount in kobo.
+ * @param {string} plan - The subscription plan ('premium' or 'basic').
+ * @returns {Promise<string|null>} The authorization URL or null on error.
+ */
+async function generatePaystackLink(user, amount, plan) {
+    try {
+        const payload = {
+            email: user.email || 'user@example.com', // Use a default email if none exists
+            amount: amount * 100, // Paystack expects amount in kobo (or cents)
+            callback_url: CALLBACK_URL,
+            metadata: {
+                custom_fields: [{
+                    telegramId: user.telegramId,
+                    plan: plan,
+                    userId: user._id
+                }]
+            }
+        };
+
+        const response = await axios.post('https://api.paystack.co/transaction/initialize', payload, {
+            headers: {
+                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (response.data.status) {
+            console.log("✅ Paystack authorization URL created successfully.");
+            return response.data.data.authorization_url;
+        } else {
+            console.error("❌ Paystack initialization failed:", response.data.message);
+            return null;
+        }
+    } catch (error) {
+        console.error("❌ Error generating Paystack link:", error.response?.data || error.message);
+        return null;
+    }
+}
+
+module.exports = {
+    generatePaystackLink
+};
