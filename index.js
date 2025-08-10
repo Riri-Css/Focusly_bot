@@ -2,8 +2,9 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+const TelegramBot = require('node-telegram-bot-api');
 
-// ✅ Import the SINGLE bot instance from botInstance.js
+// Import the SINGLE bot instance from botInstance.js
 const bot = require('./botInstance');
 
 // Import handlers for different types of updates
@@ -12,14 +13,22 @@ const { handleCallbackQuery } = require('./handlers/callbackHandlers');
 const paystackWebhook = require('./routes/paystackWebhook');
 
 const app = express();
-
-// Webhook setup
-
 const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
-console.log(`Setting webhook to: ${webhookUrl}`);
-bot.setWebHook(webhookUrl);
 
-//bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
+// Webhook setup with success/failure logging
+bot.setWebHook(webhookUrl, {
+    allowed_updates: ['message', 'callback_query']
+})
+.then(success => {
+    if (success) {
+        console.log(`✅ Webhook successfully set to: ${webhookUrl}`);
+    } else {
+        console.error(`❌ Webhook failed to set: ${webhookUrl}`);
+    }
+})
+.catch(error => {
+    console.error(`❌ Error setting webhook:`, error);
+});
 
 app.use(express.json());
 
@@ -32,6 +41,7 @@ app.post(`/webhook`, async (req, res) => {
             console.log("📩 Incoming message:", update.message.text);
             await handleMessage(bot, update.message);
         } else if (update.callback_query) {
+            // 🚨 We need to see this line!
             console.log("🔘 Incoming callback query:", update.callback_query.data);
             await handleCallbackQuery(bot, update.callback_query);
         }
