@@ -20,6 +20,10 @@ app.use(express.json());
 
 // Main webhook endpoint that routes updates
 app.post(`/webhook`, async (req, res) => {
+
+    console.log('--- Webhook Received ---');
+    console.log('Request body:', req.body);
+
     try {
         const update = req.body;
         
