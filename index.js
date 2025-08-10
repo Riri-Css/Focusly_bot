@@ -14,7 +14,12 @@ const paystackWebhook = require('./routes/paystackWebhook');
 const app = express();
 
 // Webhook setup
-bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
+
+const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
+console.log(`Setting webhook to: ${webhookUrl}`);
+bot.setWebHook(webhookUrl);
+
+//bot.setWebHook(`${process.env.RENDER_EXTERNAL_URL}/webhook`);
 
 app.use(express.json());
 
