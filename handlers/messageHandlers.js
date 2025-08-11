@@ -8,17 +8,19 @@ const {
     getOrCreateUser,
     addRecentChat,
     addImportantMemory,
-    createChecklist,
     getChecklistByDate,
     handleDailyCheckinReset,
-    toggleTaskCompletion,
-    submitCheckin,
+    submitCheckin
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { sendSubscriptionOptions } = require('../utils/telegram');
 const moment = require('moment-timezone');
-const User = require('../models/user');
+const { getFirestore, doc, setDoc, getDoc } = require('firebase/firestore');
+const { v4: uuidv4 } = require('uuid'); // Used for generating unique IDs
+
+const { app } = require('../utils/firebase');
+const db = getFirestore(app);
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -47,7 +49,6 @@ function createChecklistMessage(checklist) {
         return "You have no tasks for today.";
     }
     const tasksText = checklist.tasks.map(task => {
-        // 🐛 FIX: Ensure task text exists before displaying it.
         const taskText = task.text || "Unnamed Task";
         const status = task.completed ? '✅' : '⬜️';
         return `${status} ${taskText}`;
@@ -61,32 +62,22 @@ function createChecklistMessage(checklist) {
  * @returns {object} The inline keyboard object.
  */
 function createChecklistKeyboard(checklist) {
-    // Check if checklist or checklist.tasks is null/undefined
-    if (!checklist || !checklist.tasks || !Array.isArray(checklist.tasks)) {
-        console.error("❌ Invalid checklist provided to createChecklistKeyboard.");
-        return { inline_keyboard: [] };
-    }
-
-    // Ensure checklist.id exists before creating buttons
-    if (!checklist.id) {
-        console.error("❌ Checklist ID is missing. Cannot create inline keyboard.");
+    if (!checklist || !checklist.tasks || !Array.isArray(checklist.tasks) || !checklist.id) {
+        console.error("❌ Invalid checklist provided or missing ID to createChecklistKeyboard.");
         return { inline_keyboard: [] };
     }
 
     const taskButtons = checklist.tasks.map(task => {
-        // Use a defensive check for task.text to prevent undefined errors
         const taskText = task.text || "Task";
         const buttonText = task.completed ? `✅ ${taskText}` : `⬜️ ${taskText}`;
         return [{
             text: buttonText,
-            // 🐛 FIX: Using a compact, pipe-separated string for callback_data
             callback_data: `toggle_task|${checklist.id}|${task.id}`
         }];
     });
 
     const submitButton = [{
         text: '✅ Submit Check-in',
-        // 🐛 FIX: Using a compact string for the submit button's callback_data
         callback_data: `submit_checkin|${checklist.id}`
     }];
 
@@ -114,6 +105,35 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 🆕 New function to save a checklist to the database
+async function saveChecklistToDb(userId, checklist) {
+    try {
+        const checklistRef = doc(db, 'users', userId, 'checklists', checklist.id);
+        await setDoc(checklistRef, checklist);
+        console.log(`✅ Checklist ${checklist.id} saved for user ${userId}.`);
+        return checklist;
+    } catch (error) {
+        console.error('❌ Error saving checklist:', error);
+        return null;
+    }
+}
+
+// 🆕 New function to get a checklist by ID
+async function getChecklistById(userId, checklistId) {
+    try {
+        const checklistRef = doc(db, 'users', userId, 'checklists', checklistId);
+        const docSnap = await getDoc(checklistRef);
+        if (docSnap.exists()) {
+            return { id: docSnap.id, ...docSnap.data() };
+        }
+        return null;
+    } catch (error) {
+        console.error('❌ Error getting checklist by ID:', error);
+        return null;
+    }
+}
+
+
 /**
  * Handles incoming messages from the user.
  * @param {object} bot - The Telegram bot instance.
@@ -136,8 +156,6 @@ async function handleMessage(bot, msg) {
         }
 
         let user = await getOrCreateUser(userId);
-
-        // Call the daily check-in reset logic at the beginning of message handling
         await handleDailyCheckinReset(user);
 
         const command = userInput.toLowerCase();
@@ -175,22 +193,15 @@ async function handleMessage(bot, msg) {
             const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
             const checklist = await getChecklistByDate(user.telegramId, today);
             
-            // 🐛 NOTE: This is the source of the "Checklist not found" error.
-            // If the user gets a checklist and then immediately asks for another,
-            // this check might fail and create a new checklist, invalidating the old one's buttons.
-            // Your getChecklistByDate function should find the *most recent un-submitted*
-            // checklist, regardless of the exact date, to prevent this.
             if (checklist) {
                 if (checklist.checkedIn) {
                     return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
                 } else {
-                    // Send the same checklist if it exists and is not checked in
                     const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
                     const keyboard = createChecklistKeyboard(checklist);
                     return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 }
             } else {
-                // Create a new checklist if it doesn't exist
                 const hasAccess = await hasAIUsageAccess(user);
                 if (!hasAccess) {
                     return sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
@@ -200,14 +211,23 @@ async function handleMessage(bot, msg) {
                     return sendTelegramMessage(bot, chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
                 }
                 
-                // 🐛 NOTE: The "Unnamed Task" problem likely originates here.
-                // The `getSmartResponse` function needs to be explicitly prompted
-                // to return structured JSON with clear task descriptions.
                 const { daily_tasks, weekly_goal } = await getSmartResponse(user, `Create a daily checklist for my weekly goal: ${user.goalMemory.text}`, model);
 
                 if (daily_tasks && daily_tasks.length > 0) {
-                    const newChecklist = await createChecklist(user, weekly_goal || user.goalMemory.text, daily_tasks);
-                    const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(newChecklist);
+                    const newChecklist = {
+                        id: uuidv4(),
+                        weeklyGoal: weekly_goal || user.goalMemory.text,
+                        tasks: daily_tasks.map(task => ({
+                            ...task,
+                            id: uuidv4(),
+                            completed: false
+                        })),
+                        checkedIn: false,
+                        createdAt: new Date().toISOString()
+                    };
+                    await saveChecklistToDb(userId, newChecklist);
+
+                    const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                     const keyboard = createChecklistKeyboard(newChecklist);
                     await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                     await trackAIUsage(user, 'checklist');
@@ -240,7 +260,6 @@ async function handleMessage(bot, msg) {
             }
         }
 
-        // This section handles general AI responses for non-command messages.
         const hasAccess = await hasAIUsageAccess(user);
         if (!hasAccess) {
             return sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
@@ -261,16 +280,26 @@ async function handleMessage(bot, msg) {
             }
             
             if (daily_tasks && daily_tasks.length > 0) {
-                // This is where the AI-driven checklist creation happens
-                const newChecklist = await createChecklist(user, weekly_goal, daily_tasks);
-                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${weekly_goal}\n\n` + createChecklistMessage(newChecklist);
+                const newChecklist = {
+                    id: uuidv4(),
+                    weeklyGoal: weekly_goal || user.goalMemory.text,
+                    tasks: daily_tasks.map(task => ({
+                        ...task,
+                        id: uuidv4(),
+                        completed: false
+                    })),
+                    checkedIn: false,
+                    createdAt: new Date().toISOString()
+                };
+                await saveChecklistToDb(userId, newChecklist);
+
+                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 await trackAIUsage(user, 'checklist');
             } else {
                 await sendTelegramMessage(bot, chatId, "I couldn't create a checklist based on that. Can you be more specific?");
             }
-            await trackAIUsage(user, 'checklist');
         } else if (message) {
             await sendTelegramMessage(bot, chatId, message);
             await trackAIUsage(user, 'general');
@@ -294,7 +323,6 @@ async function handleCallbackQuery(bot, callbackQuery) {
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
 
-    // Acknowledge the callback query to remove the loading animation
     await bot.answerCallbackQuery(callbackQuery.id);
 
     try {
@@ -303,40 +331,48 @@ async function handleCallbackQuery(bot, callbackQuery) {
             return sendTelegramMessage(bot, chatId, "Error: Could not retrieve or create user.");
         }
 
-        // 🐛 FIX: Parse the compact, pipe-separated callback data
         const [action, checklistId, taskId] = data.split('|');
+        const checklist = await getChecklistById(user.telegramId, checklistId);
 
+        if (!checklist) {
+            console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
+            await sendTelegramMessage(bot, chatId, "Sorry, I couldn't find that checklist. It may have been replaced by a new one.");
+            return;
+        }
+        
         switch (action) {
             case 'toggle_task':
-                const updatedChecklist = await toggleTaskCompletion(user, checklistId, taskId);
-                
-                // 🐛 FIX: Add a check to handle cases where the checklist is not found.
-                if (!updatedChecklist) {
-                    console.error(`❌ Checklist ID ${checklistId} not found during toggle task.`);
-                    return sendTelegramMessage(bot, chatId, "Sorry, I couldn't find that checklist. It may have been replaced by a new one.");
-                }
+                const taskToToggle = checklist.tasks.find(t => t.id === taskId);
+                if (taskToToggle) {
+                    taskToToggle.completed = !taskToToggle.completed;
+                    await saveChecklistToDb(user.telegramId, checklist);
 
-                const keyboard = createChecklistKeyboard(updatedChecklist);
-                const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(updatedChecklist);
-                
-                bot.editMessageText(messageText, {
-                    chat_id: chatId,
-                    message_id: messageId,
-                    parse_mode: 'Markdown',
-                    reply_markup: keyboard
-                });
+                    const keyboard = createChecklistKeyboard(checklist);
+                    const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
+                    
+                    await bot.editMessageText(messageText, {
+                        chat_id: chatId,
+                        message_id: messageId,
+                        parse_mode: 'Markdown',
+                        reply_markup: keyboard
+                    });
+                } else {
+                    await bot.answerCallbackQuery('Task not found.');
+                }
                 break;
 
             case 'submit_checkin':
-                // 🐛 FIX: Add a check to handle cases where the checklist is not found.
-                const submittedUser = await submitCheckin(user, checklistId);
-                if (!submittedUser) {
-                    console.error(`❌ Checklist ID ${checklistId} not found during check-in submission.`);
-                    return sendTelegramMessage(bot, chatId, "Sorry, I couldn't submit that checklist. It may have been replaced by a new one.");
+                if (checklist.checkedIn) {
+                    await bot.answerCallbackQuery('You have already submitted this check-in.');
+                    return;
                 }
 
-                const finalChecklist = await getChecklistByDate(user.telegramId, moment().tz(TIMEZONE).format('YYYY-MM-DD'));
-                const finalMessage = createFinalCheckinMessage(submittedUser, finalChecklist);
+                checklist.checkedIn = true;
+                await saveChecklistToDb(user.telegramId, checklist);
+                
+                const submittedUser = await submitCheckin(user, checklistId);
+                
+                const finalMessage = createFinalCheckinMessage(submittedUser, checklist);
                 
                 await bot.editMessageText(finalMessage, {
                     chat_id: chatId,
