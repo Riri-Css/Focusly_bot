@@ -64,7 +64,7 @@ function createChecklistKeyboard(checklist) {
     const buttonText = task.completed ? `✅ ${task.text}` : `⬜️ ${task.text}`;
     return [{
       text: buttonText,
-      // Simplified and guaranteed JSON string
+      // This part for 'toggle_task' already has the checklistId
       callback_data: JSON.stringify({
         action: 'toggle_task',
         checklistId: checklist.id,
@@ -75,7 +75,7 @@ function createChecklistKeyboard(checklist) {
 
   const submitButton = [{
     text: '✅ Submit Check-in',
-    // ✅ FIX: The callback_data is updated to include the checklistId
+    // ✅ FIX: The callback_data is now updated to include the checklistId
     callback_data: JSON.stringify({
       action: 'submit_checkin',
       checklistId: checklist.id
