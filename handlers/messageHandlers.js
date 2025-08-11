@@ -1,9 +1,9 @@
 // File: src/handlers/messageHandlers.js
 // This version includes the daily check-in reset logic and AI usage tracking.
-const { 
-  getUserByTelegramId, 
-  getOrCreateUser, 
-  addRecentChat, 
+const {
+  getUserByTelegramId,
+  getOrCreateUser,
+  addRecentChat,
   addImportantMemory,
   createChecklist,
   getChecklistByDate,
@@ -75,7 +75,7 @@ function createChecklistKeyboard(checklist) {
 
   const submitButton = [{
     text: '✅ Submit Check-in',
-    // ✅ FIX: The callback_data is now updated to include the checklistId
+    // ✅ The callback_data is now updated to include the checklistId
     callback_data: JSON.stringify({
       action: 'submit_checkin',
       checklistId: checklist.id
@@ -213,18 +213,18 @@ async function handleMessage(bot, msg) {
 
     await addRecentChat(user, userInput);
     
-    const { 
-      message, 
-      intent, 
-      challenge_message, 
-      weekly_goal, 
-      daily_tasks 
+    const {
+      message,
+      intent,
+      challenge_message,
+      weekly_goal,
+      daily_tasks
     } = await getSmartResponse(user, userInput, model);
 
     if (intent === 'create_checklist') {
       if (challenge_message) {
         await sendTelegramMessage(bot, chatId, challenge_message);
-        await delay(1500); 
+        await delay(1500);
       }
       
       if (daily_tasks && daily_tasks.length > 0) {
