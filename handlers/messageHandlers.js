@@ -1,5 +1,8 @@
 // File: src/handlers/messageHandlers.js
-// This version includes the daily check-in reset logic and AI usage tracking.
+// This version includes the daily check-in reset logic, AI usage tracking,
+// the original AI-driven checklist creation feature, and a fix for the
+// inline button callback data to ensure checklist IDs are correctly passed.
+
 const {
   getUserByTelegramId,
   getOrCreateUser,
@@ -60,11 +63,17 @@ function createChecklistKeyboard(checklist) {
     return { inline_keyboard: [] };
   }
 
+  // Ensure checklist.id exists before creating buttons
+  if (!checklist.id) {
+    console.error("❌ Checklist ID is missing. Cannot create inline keyboard.");
+    return { inline_keyboard: [] };
+  }
+
   const taskButtons = checklist.tasks.map(task => {
     const buttonText = task.completed ? `✅ ${task.text}` : `⬜️ ${task.text}`;
     return [{
       text: buttonText,
-      // This part for 'toggle_task' already has the checklistId
+      // 🐛 FIX: The callback_data now correctly includes the checklistId
       callback_data: JSON.stringify({
         action: 'toggle_task',
         checklistId: checklist.id,
@@ -75,7 +84,7 @@ function createChecklistKeyboard(checklist) {
 
   const submitButton = [{
     text: '✅ Submit Check-in',
-    // ✅ The callback_data is now updated to include the checklistId
+    // 🐛 FIX: The callback_data is now updated to include the checklistId
     callback_data: JSON.stringify({
       action: 'submit_checkin',
       checklistId: checklist.id
@@ -121,9 +130,6 @@ async function handleMessage(bot, msg) {
     const chatId = msg.chat.id;
     const userInput = msg.text?.trim();
 
-    //console.log(`🔍 Received raw message: "${msg.text}"`);
-    //console.log(`🔍 Trimmed user input: "${userInput}"`);
-
     if (!userInput) {
       await sendTelegramMessage(bot, chatId, "Hmm, I didn’t catch that. Try sending it again.");
       return;
@@ -131,7 +137,7 @@ async function handleMessage(bot, msg) {
     
     let user = await getOrCreateUser(userId);
 
-    // 🆕 Call the daily check-in reset logic at the beginning of message handling
+    // Call the daily check-in reset logic at the beginning of message handling
     await handleDailyCheckinReset(user);
 
     const command = userInput.toLowerCase();
@@ -170,13 +176,35 @@ async function handleMessage(bot, msg) {
         if (checklist.checkedIn) {
           return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
         } else {
+          // Send the same checklist if it exists and is not checked in
           const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
           const keyboard = createChecklistKeyboard(checklist);
           return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
         }
       } else {
-        return sendTelegramMessage(bot, chatId, "You don't have a checklist for today yet. Use `/setgoal` to set your goal first.");
+        // Create a new checklist if it doesn't exist
+        const hasAccess = await hasAIUsageAccess(user);
+        if (!hasAccess) {
+          return sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
+        }
+        const model = await getModelForUser(user);
+        if (!model) {
+          return sendTelegramMessage(bot, chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
+        }
+        
+        const { daily_tasks, weekly_goal } = await getSmartResponse(user, `Create a daily checklist for my weekly goal: ${user.goalMemory.text}`, model);
+
+        if (daily_tasks && daily_tasks.length > 0) {
+          const newChecklist = await createChecklist(user, weekly_goal || user.goalMemory.text, daily_tasks);
+          const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(newChecklist);
+          const keyboard = createChecklistKeyboard(newChecklist);
+          await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+          await trackAIUsage(user, 'checklist');
+        } else {
+          await sendTelegramMessage(bot, chatId, "I couldn't create a checklist based on your goal. Can you try setting a more specific goal?");
+        }
       }
+      return;
     }
 
     if (command.startsWith('/remember')) {
@@ -201,7 +229,7 @@ async function handleMessage(bot, msg) {
       }
     }
 
-    // This section is only executed if the message is NOT a recognized command.
+    // This section handles general AI responses for non-command messages.
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
       return sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
@@ -213,13 +241,7 @@ async function handleMessage(bot, msg) {
 
     await addRecentChat(user, userInput);
     
-    const {
-      message,
-      intent,
-      challenge_message,
-      weekly_goal,
-      daily_tasks
-    } = await getSmartResponse(user, userInput, model);
+    const { message, intent, challenge_message, weekly_goal, daily_tasks } = await getSmartResponse(user, userInput, model);
 
     if (intent === 'create_checklist') {
       if (challenge_message) {
@@ -228,24 +250,20 @@ async function handleMessage(bot, msg) {
       }
       
       if (daily_tasks && daily_tasks.length > 0) {
+        // This is where the AI-driven checklist creation happens
         const newChecklist = await createChecklist(user, weekly_goal, daily_tasks);
-        const messageText = `Got it. Here is your weekly goal and checklist to get you started:\n\n**Weekly Goal:** ${weekly_goal}\n\n` + createChecklistMessage(newChecklist);
+        const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${weekly_goal}\n\n` + createChecklistMessage(newChecklist);
         const keyboard = createChecklistKeyboard(newChecklist);
         await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
       } else {
         await sendTelegramMessage(bot, chatId, "I couldn't create a checklist based on that. Can you be more specific?");
       }
+      await trackAIUsage(user, 'checklist');
     } else if (message) {
       await sendTelegramMessage(bot, chatId, message);
+      await trackAIUsage(user, 'general');
     } else {
       await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that command. Please focus on your current goal and use the /checkin command when you're ready.");
-    }
-    
-    // We only track AI usage if it was actually used (i.e. a response was generated)
-    if (intent !== 'create_checklist' && message) {
-        await trackAIUsage(user, 'general');
-    } else if (intent === 'create_checklist') {
-        await trackAIUsage(user, 'checklist');
     }
     
   } catch (error) {

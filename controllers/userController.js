@@ -1,10 +1,11 @@
-// userController.js
+// File: src/controllers/userController.js
 // This file contains the logic for handling user messages and interacting with the database.
+// This version is cleaned up to correctly handle daily resets and work in tandem with messageHandlers.
 
 const User = require('../models/user');
-const { getBotPrompt } = require('../utils/prompt_helper');
-// Assuming getChecklistFromGoal is from your existing openaiHelper.js file
-const { getChecklistFromGoal } = require('../utils/openaiHelper');
+const moment = require('moment-timezone');
+
+const TIMEZONE = 'Africa/Lagos';
 
 /**
  * Generates a simple unique ID string using the current timestamp and a random number.
@@ -30,6 +31,10 @@ async function getOrCreateUser(telegramId) {
             checklists: [],
             lastCheckinDate: null,
             consecutiveChecks: 0,
+            subscriptionStatus: 'inactive', // Default to inactive
+            subscriptionPlan: 'free',      // Default to free
+            aiUsageCount: 0,
+            onboardingStep: 'start', // Initial onboarding step
         });
         await user.save();
         console.log(`New user created: ${telegramId}`);
@@ -73,7 +78,23 @@ async function createChecklist(user, weeklyGoal, dailyTasks) {
 }
 
 /**
- * Handles the daily check-in logic, including streak management and goal setting.
+ * Retrieves a checklist by its date for a specific user.
+ * @param {string} telegramId The user's Telegram ID.
+ * @param {string} dateString The date in 'YYYY-MM-DD' format.
+ * @returns {Promise<Object|null>} The checklist object or null if not found.
+ */
+async function getChecklistByDate(telegramId, dateString) {
+    const user = await User.findOne({ telegramId });
+    if (!user) {
+        return null;
+    }
+    const targetDate = moment.tz(dateString, TIMEZONE).startOf('day').toDate();
+    return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(targetDate, 'day'));
+}
+
+/**
+ * Handles the daily check-in reset logic for streak management.
+ * This function should be called at the start of a user's day to update their state.
  * @param {User} user The user document.
  */
 async function handleDailyCheckinReset(user) {
@@ -82,53 +103,20 @@ async function handleDailyCheckinReset(user) {
         return;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = moment().tz(TIMEZONE);
+    const todayStart = now.startOf('day');
 
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const isStreakContinuing = user.lastCheckinDate && new Date(user.lastCheckinDate).getTime() === yesterday.getTime();
-    const hasCheckedInToday = user.lastCheckinDate && new Date(user.lastCheckinDate).getTime() === today.getTime();
-    const hasExistingChecklist = user.checklists.some(c => new Date(c.date).getTime() === today.getTime());
-
-    if (hasCheckedInToday) {
-        console.log(`User ${user.telegramId} has already checked in today. No changes needed.`);
-        return;
-    }
-
-    if (!isStreakContinuing && user.streak > 0) {
-        console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
-        user.streak = 0;
-    }
-
-    if (!hasExistingChecklist) {
-        let dailyChecklist = null;
-        if (user.goalMemory && user.goalMemory.text) {
-            try {
-                // This now calls the getChecklistFromGoal function, which should be in your openaiHelper.js file.
-                dailyChecklist = await getChecklistFromGoal(user.goalMemory.text);
-            } catch (error) {
-                console.error("Error generating daily checklist from goal:", error);
-                // Fallback to a default checklist if the LLM call fails
-                dailyChecklist = {
-                    weeklyGoal: user.goalMemory.text,
-                    dailyTasks: [{ task: "Review your weekly goal." }],
-                };
+    // If the user has not checked in today
+    if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(todayStart, 'day')) {
+        const yesterdayStart = todayStart.clone().subtract(1, 'day');
+        // If they did not check in yesterday, reset streak
+        if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(yesterdayStart, 'day')) {
+            if (user.streak > 0) {
+                console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
+                user.streak = 0;
             }
-        } else {
-            // Fallback for users without a goal
-            dailyChecklist = {
-                weeklyGoal: "No weekly goal set.",
-                dailyTasks: [{ task: "Set a new weekly goal!" }],
-            };
         }
-        await createChecklist(user, dailyChecklist.weeklyGoal, dailyChecklist.dailyTasks);
-        console.log(`✅ New checklist created for user ${user.telegramId}.`);
-    } else {
-        console.log(`User ${user.telegramId} already has a checklist for today. No new checklist created.`);
     }
-
     await user.save();
 }
 
@@ -137,24 +125,24 @@ async function handleDailyCheckinReset(user) {
  * @param {User} user The user document.
  * @param {string} checklistId The ID of the checklist.
  * @param {string} taskId The ID of the task to toggle.
- * @returns {boolean} True if the task was found and updated, false otherwise.
+ * @returns {Object|null} The updated checklist or null if not found.
  */
 async function toggleTaskCompletion(user, checklistId, taskId) {
     const checklist = user.checklists.find(c => c.id === checklistId);
     if (!checklist) {
         console.error(`Checklist not found with ID: ${checklistId}`);
-        return false;
+        return null;
     }
 
     const task = checklist.tasks.find(t => t.id === taskId);
     if (!task) {
         console.error(`Task not found with ID: ${taskId} in checklist ${checklistId}`);
-        return false;
+        return null;
     }
 
     task.completed = !task.completed;
     await user.save();
-    return true;
+    return checklist;
 }
 
 /**
@@ -168,24 +156,24 @@ async function submitCheckin(user, checklistId) {
         return "Error: User not found.";
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const checklist = user.checklists.find(c => c.id === checklistId);
     if (!checklist) {
         return "Error: Checklist not found.";
     }
+    
+    // Use moment to check if it's the same day
+    const todayStart = moment().tz(TIMEZONE).startOf('day');
+    const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
 
-    if (checklist.checkedIn) {
-        return "You've already submitted your check-in for today!";
+    if (checklist.checkedIn || lastCheckinIsToday) {
+      return "You've already submitted your check-in for today!";
     }
 
     const totalTasks = checklist.tasks.length;
     const completedTasks = checklist.tasks.filter(t => t.completed).length;
 
-    user.lastCheckinDate = today;
+    user.lastCheckinDate = new Date();
     user.streak += 1;
-    user.consecutiveChecks += 1;
     checklist.checkedIn = true;
     await user.save();
 
@@ -199,154 +187,36 @@ Your current streak: ${user.streak} days.
 }
 
 /**
- * Generates an inline keyboard for a user's daily checklist.
+ * Adds a recent chat message to a user's history.
  * @param {User} user The user document.
- * @returns {object} The inline keyboard object for Telegram.
+ * @param {string} chatText The text of the chat message.
  */
-function getDailyCheckinKeyboard(user) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const currentChecklist = user.checklists.find(c => new Date(c.date).getTime() === today.getTime());
-    if (!currentChecklist) {
-        console.error("No checklist found for today.");
-        return null;
-    }
-
-    const taskButtons = currentChecklist.tasks.map(task => {
-        const icon = task.completed ? '✅' : '⬜️';
-        const callbackData = `toggle_task|${currentChecklist.id}|${task.id}`;
-        return [{
-            text: `${icon} ${task.text}`,
-            callback_data: callbackData,
-        }];
-    });
-
-    const submitButton = [{
-        text: '➡️ Submit Check-in',
-        callback_data: `submit_checkin|${currentChecklist.id}`,
-    }];
-
-    return {
-        inline_keyboard: [...taskButtons, submitButton],
-    };
+async function addRecentChat(user, chatText) {
+  user.recentChats.push({ text: chatText, timestamp: new Date() });
+  // Keep only the last 10 messages to avoid the array growing too large.
+  if (user.recentChats.length > 10) {
+      user.recentChats.shift();
+  }
+  await user.save();
 }
 
 /**
- * Handles incoming Telegram callback queries (e.g., button clicks).
- * @param {object} bot The Telegram bot instance.
- * @param {object} callbackQuery The callback query object from Telegram.
+ * Adds an important memory to a user's long-term memory.
+ * @param {User} user The user document.
+ * @param {string} memoryText The text of the important memory.
  */
-async function handleCallbackQuery(bot, callbackQuery) {
-    const message = callbackQuery.message;
-    const chatId = message.chat.id;
-    const fromId = callbackQuery.from.id;
-    const callbackData = callbackQuery.data;
-
-    // Acknowledge the callback query to remove the loading state
-    await bot.answerCallbackQuery(callbackQuery.id);
-
-    // Split the callback data string to get action, checklistId, and taskId
-    const [action, checklistId, taskId] = callbackData.split('|');
-
-    console.log(`Received callback query: Action=${action}, Checklist ID=${checklistId}, Task ID=${taskId}`);
-
-    try {
-        const user = await getOrCreateUser(fromId);
-        if (!user) {
-            return bot.sendMessage(chatId, "Sorry, I couldn't find your user account.");
-        }
-
-        switch (action) {
-            case 'toggle_task':
-                await toggleTaskCompletion(user, checklistId, taskId);
-                const updatedKeyboard = getDailyCheckinKeyboard(user);
-                await bot.editMessageReplyMarkup(updatedKeyboard, {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-                break;
-
-            case 'submit_checkin':
-                const summary = await submitCheckin(user, checklistId);
-                const checkinMessage = `${summary}`;
-                await bot.editMessageReplyMarkup(null, {
-                    chat_id: chatId,
-                    message_id: message.message_id
-                });
-                await bot.sendMessage(chatId, checkinMessage);
-                break;
-        }
-
-    } catch (error) {
-        console.error(`Error handling callback query: ${error.message}`);
-        bot.sendMessage(chatId, "An error occurred while processing your request. Please try again later.");
-    }
-}
-
-/**
- * Handles incoming Telegram text messages.
- * @param {object} bot The Telegram bot instance.
- * @param {object} msg The message object from Telegram.
- */
-async function handleMessage(bot, msg) {
-    const chatId = msg.chat.id;
-    const fromId = msg.from.id;
-    const text = msg.text;
-
-    try {
-        const user = await getOrCreateUser(fromId);
-
-        if (!user) {
-            return bot.sendMessage(chatId, "Sorry, I couldn't find your user account.");
-        }
-
-        if (text.startsWith('/start')) {
-            const welcomeMessage = getBotPrompt('welcome');
-            await bot.sendMessage(chatId, welcomeMessage);
-        } else if (text.startsWith('/setgoal')) {
-            const goalText = text.replace('/setgoal', '').trim();
-            if (!goalText) {
-                return bot.sendMessage(chatId, "Please specify your goal after the command, e.g., `/setgoal Gain 25 new subscribers.`");
-            }
-            user.goalMemory = { text: goalText };
-            await user.save();
-            await bot.sendMessage(chatId, `Your new weekly goal has been set: "${goalText}".`);
-        } else if (text.startsWith('/checkin')) {
-            // This is the correct flow to trigger a check-in
-            await handleDailyCheckinReset(user);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            const checklist = user.checklists.find(c => new Date(c.date).getTime() === today.getTime());
-
-            if (checklist) {
-                const messageText = getBotPrompt('newChecklist', {
-                    weeklyGoal: checklist.weeklyGoal,
-                });
-                const keyboard = getDailyCheckinKeyboard(user);
-
-                if (keyboard) {
-                    await bot.sendMessage(chatId, messageText, {
-                        parse_mode: 'Markdown',
-                        reply_markup: keyboard,
-                    });
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Error in handleMessage:", error);
-        bot.sendMessage(chatId, "An error occurred. Please try again later.");
-    }
+async function addImportantMemory(user, memoryText) {
+  user.importantMemories.push({ text: memoryText, timestamp: new Date() });
+  await user.save();
 }
 
 module.exports = {
     getOrCreateUser,
     createChecklist,
+    getChecklistByDate,
     handleDailyCheckinReset,
     toggleTaskCompletion,
     submitCheckin,
-    getDailyCheckinKeyboard,
-    handleCallbackQuery,
-    handleMessage,
+    addRecentChat,
+    addImportantMemory,
 };
