@@ -108,16 +108,21 @@ function delay(ms) {
  * @param {object} msg - The message object from Telegram.
  */
 async function handleMessage(bot, msg) {
-    if (!msg || !msg.from || !msg.from.id) {
-        console.error("❌ Invalid message format received:", msg);
+    // A robust check at the beginning to ensure 'msg' is valid and has a 'chat' property.
+    // This prevents the 'ReferenceError' in the catch block if the msg is malformed.
+    if (!msg || !msg.from || !msg.from.id || !msg.chat || !msg.chat.id) {
+        console.error("❌ Invalid message format or missing chatId received:", msg);
+        // We can't send a message back without a chatId, so we just return.
         return;
     }
 
-    try {
-        const userId = msg.from.id;
-        const chatId = msg.chat.id;
-        const userInput = msg.text?.trim();
+    // Now we can safely declare chatId. It is guaranteed to exist.
+    const userId = msg.from.id;
+    const chatId = msg.chat.id;
+    const userInput = msg.text?.trim();
 
+    // Use a single try/catch block for the main logic.
+    try {
         if (!userInput) {
             await sendTelegramMessage(bot, chatId, "Hmm, I didn’t catch that. Try sending it again.");
             return;
@@ -193,6 +198,7 @@ async function handleMessage(bot, msg) {
                         checkedIn: false,
                         createdAt: new Date().toISOString()
                     };
+                    // The error was here, likely a problem with how createAndSaveChecklist is defined.
                     await createAndSaveChecklist(userId, newChecklist);
 
                     const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
@@ -276,6 +282,7 @@ async function handleMessage(bot, msg) {
         }
         
     } catch (error) {
+        // Now that chatId is guaranteed to exist, we can safely use it here.
         console.error("❌ Error handling message:", error);
         await sendTelegramMessage(bot, chatId, "Something went wrong while processing your message. Please try again.");
     }
