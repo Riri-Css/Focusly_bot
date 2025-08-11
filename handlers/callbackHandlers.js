@@ -1,11 +1,6 @@
 // File: src/handlers/callbackHandlers.js
 // This version handles all button callback queries, including subscription buttons.
-const {
-    getChecklistByDate,
-    toggleTaskCompletion,
-    submitCheckin,
-    getUserByTelegramId,
-} = require('../controllers/userController');
+const User = require('../models/user');
 const {
     createChecklistMessage,
     createChecklistKeyboard,
@@ -38,48 +33,73 @@ async function handleCallbackQuery(bot, callbackQuery) {
     });
 
     try {
-        // 🐛 FIX: Parse the compact, pipe-separated callback data
+        // Parse the compact, pipe-separated callback data
         const [action, ...params] = data.split('|');
 
         switch (action) {
             case 'toggle_task':
                 const [checklistIdToggle, taskId] = params;
-                const userToggle = await getUserByTelegramId(userId);
+                const userToggle = await User.findOne({ telegramId: userId });
 
-                if (userToggle) {
-                    const updatedChecklist = await toggleTaskCompletion(userToggle, checklistIdToggle, taskId);
-                    if (updatedChecklist) {
-                        const keyboard = createChecklistKeyboard(updatedChecklist);
-                        const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${userToggle.goalMemory.text}\n\n` + createChecklistMessage(updatedChecklist);
-                        
-                        await bot.editMessageText(messageText, {
-                            chat_id: chatId,
-                            message_id: messageId,
-                            parse_mode: 'Markdown',
-                            reply_markup: keyboard
-                        });
-                        console.log(`✅ User ${userId} toggled task: ${taskId}`);
-                    }
+                if (!userToggle) {
+                    await sendTelegramMessage(bot, userId, "User not found. Please start over.");
+                    return;
                 }
+
+                const checklistToggle = userToggle.checklists.find(c => c.id === checklistIdToggle);
+                if (!checklistToggle) {
+                    await sendTelegramMessage(bot, userId, "Checklist not found. Please try again.");
+                    return;
+                }
+
+                const taskToggle = checklistToggle.tasks.find(t => t.id === taskId);
+                if (!taskToggle) {
+                    await sendTelegramMessage(bot, userId, "Task not found. Please try again.");
+                    return;
+                }
+
+                taskToggle.completed = !taskToggle.completed;
+                await userToggle.save();
+                
+                const keyboard = createChecklistKeyboard(checklistToggle);
+                const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${userToggle.goalMemory.text}\n\n` + createChecklistMessage(checklistToggle);
+                
+                await bot.editMessageText(messageText, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                });
+                console.log(`✅ User ${userId} toggled task: ${taskId}`);
                 break;
 
             case 'submit_checkin':
                 const [checklistIdSubmit] = params;
-                const userSubmit = await getUserByTelegramId(userId);
+                const userSubmit = await User.findOne({ telegramId: userId });
 
-                if (userSubmit) {
-                    const submittedUser = await submitCheckin(userSubmit, checklistIdSubmit);
-                    const finalChecklist = await getChecklistByDate(submittedUser.telegramId, moment().tz(TIMEZONE).format('YYYY-MM-DD'));
-                    const finalMessage = createFinalCheckinMessage(submittedUser, finalChecklist);
-                    
-                    await bot.editMessageText(finalMessage, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: { inline_keyboard: [] }
-                    });
-                    console.log(`✅ User ${userId} submitted check-in for checklist ${checklistIdSubmit}.`);
+                if (!userSubmit) {
+                    await sendTelegramMessage(bot, userId, "User not found. Please start over.");
+                    return;
                 }
+
+                const checklistSubmit = userSubmit.checklists.find(c => c.id === checklistIdSubmit);
+                if (!checklistSubmit) {
+                    await sendTelegramMessage(bot, userId, "Checklist not found. Please try again.");
+                    return;
+                }
+
+                checklistSubmit.checkedIn = true;
+                await userSubmit.save();
+
+                const finalMessage = createFinalCheckinMessage(userSubmit, checklistSubmit);
+                
+                await bot.editMessageText(finalMessage, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [] }
+                });
+                console.log(`✅ User ${userId} submitted check-in for checklist ${checklistIdSubmit}.`);
                 break;
 
             case 'subscribe':
@@ -118,7 +138,7 @@ async function handleSubscription(bot, callbackQuery, plan) {
 
     try {
         const amount = plan === 'premium' ? 1000 : 500;
-        const user = await getUserByTelegramId(userId);
+        const user = await User.findOne({ telegramId: userId });
 
         if (!user) {
             await sendTelegramMessage(bot, userId, "User not found. Please start over.");
