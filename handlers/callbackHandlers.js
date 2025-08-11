@@ -20,7 +20,12 @@ async function handleCallbackQuery(bot, callbackQuery) {
     console.log('--- Debugging Callback Query ---');
     console.log('Received raw callback data:', data);
 
-    
+    // ✅ FIX: Acknowledge the callback immediately to prevent a timeout.
+    // This tells Telegram "I got it" before we start any time-consuming logic.
+    await bot.answerCallbackQuery(callbackId).catch(err => {
+        console.error('❌ Failed to answer callback query immediately:', err);
+    });
+
     try {
         const parsedData = JSON.parse(data);
         console.log('✅ Parsed callback query data:', parsedData);
@@ -36,12 +41,15 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 await handleSubscription(bot, callbackQuery, parsedData);
                 break;
             default:
-                await bot.answerCallbackQuery(callbackId, { text: "Unknown action." });
+                // Since the callback was already answered, we don't need to answer again.
                 break;
         }
     } catch (error) {
         console.error('❌ Error parsing callback data or handling action:', error);
-        await bot.answerCallbackQuery(callbackId, { text: "An error occurred. Please try again." });
+        // The error here will be logged, but the user won't get a timeout message.
+        // We can send a new message to the user for a better experience.
+        const userId = callbackQuery.from.id;
+        await sendTelegramMessage(bot, userId, "An internal error occurred. Please try again.");
     }
 }
 
@@ -52,28 +60,26 @@ async function handleCallbackQuery(bot, callbackQuery) {
  * @param {object} parsedData - The already parsed data from the callback query.
  */
 async function handleTaskToggle(bot, callbackQuery, parsedData) {
-    const { from, message, id: callbackId } = callbackQuery;
+    const { from, message } = callbackQuery;
     const telegramId = from.id;
     const { checklistId, taskId } = parsedData;
 
     try {
         const user = await User.findOne({ telegramId });
         if (!user) {
-            await bot.answerCallbackQuery(callbackId, { text: "User not found. Please start over." });
+            await sendTelegramMessage(bot, telegramId, "User not found. Please start over.");
             return;
         }
 
-        // Corrected: Use array find for a more robust lookup
         const checklist = user.checklists.find(c => c.id === checklistId);
         if (!checklist) {
-            await bot.answerCallbackQuery(callbackId, { text: "Checklist not found. Please try again." });
+            await sendTelegramMessage(bot, telegramId, "Checklist not found. Please try again.");
             return;
         }
 
-        // Corrected: Use array find for a more robust lookup
         const task = checklist.tasks.find(t => t.id === taskId);
         if (!task) {
-            await bot.answerCallbackQuery(callbackId, { text: "Task not found. Please try again." });
+            await sendTelegramMessage(bot, telegramId, "Task not found. Please try again.");
             return;
         }
 
@@ -92,11 +98,10 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
         });
 
         console.log(`✅ User ${telegramId} toggled task: ${task.text}`);
-        await bot.answerCallbackQuery(callbackId, { text: task.completed ? "Task completed! ✅" : "Task marked as incomplete." });
 
     } catch (error) {
         console.error('❌ Error handling task toggle:', error);
-        await bot.answerCallbackQuery(callbackId, { text: "An error occurred while toggling the task." });
+        await sendTelegramMessage(bot, telegramId, "An error occurred while toggling the task.");
     }
 }
 
@@ -107,21 +112,20 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
  * @param {object} parsedData - The already parsed data from the callback query.
  */
 async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
-    const { from, message, id: callbackId } = callbackQuery;
+    const { from, message } = callbackQuery;
     const telegramId = from.id;
     const { checklistId } = parsedData;
 
     try {
         const user = await User.findOne({ telegramId });
         if (!user) {
-            await bot.answerCallbackQuery(callbackId, { text: "User not found. Please start over." });
+            await sendTelegramMessage(bot, telegramId, "User not found. Please start over.");
             return;
         }
 
-        // Corrected: Use array find for a more robust lookup
         const checklist = user.checklists.find(c => c.id === checklistId);
         if (!checklist) {
-            await bot.answerCallbackQuery(callbackId, { text: "Checklist not found. Please try again." });
+            await sendTelegramMessage(bot, telegramId, "Checklist not found. Please try again.");
             return;
         }
 
@@ -134,7 +138,7 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
         if (completedTasks === totalTasks) {
             completionMessage = `**Amazing! You completed all your tasks today!** 🎉 Keep up this incredible momentum! Your consistency will lead to great results.`;
         } else if (completedTasks > 0) {
-            completionMessage = `**Great job!** You completed ${completedTasks} out of ${totalTasks} tasks today. Every step forward counts! Let's aim to knock out the rest tomorrow. 💪`;
+            completionMessage = `**Great job!** You completed ${completedTasks} out of ${totalTasks} tasks today. Every step forward counts! Let's aim to knock out the rest tomorrow. �`;
         } else {
             completionMessage = `**That's okay!** You can't win them all, but every day is a new chance to try. Let's make tomorrow a day of progress!`;
         }
@@ -143,15 +147,13 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
 
         await user.save();
         
-        await bot.answerCallbackQuery(callbackId, { text: "Check-in successful! Your progress is saved." });
-        
         await bot.deleteMessage(message.chat.id, message.message_id);
 
         console.log(`✅ User ${telegramId} submitted check-in for checklist ${checklistId}.`);
 
     } catch (error) {
         console.error('❌ Error handling submit checkin:', error);
-        await bot.answerCallbackQuery(callbackId, { text: "An error occurred while submitting the check-in." });
+        await sendTelegramMessage(bot, telegramId, "An error occurred while submitting the check-in.");
     }
 }
 
@@ -162,7 +164,7 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
  * @param {object} parsedData - The already parsed data from the callback query.
  */
 async function handleSubscription(bot, callbackQuery, parsedData) {
-    const { from, message, id: callbackId } = callbackQuery;
+    const { from, message } = callbackQuery;
     const userId = from.id;
     const chatId = message.chat.id;
     
@@ -172,7 +174,7 @@ async function handleSubscription(bot, callbackQuery, parsedData) {
         const user = await getUserByTelegramId(userId);
 
         if (!user) {
-            await bot.answerCallbackQuery(callbackId, { text: "User not found. Please start over." });
+            await sendTelegramMessage(bot, userId, "User not found. Please start over.");
             return;
         }
 
@@ -192,11 +194,9 @@ async function handleSubscription(bot, callbackQuery, parsedData) {
             await bot.sendMessage(chatId, "❌ I couldn't generate a payment link at the moment. Please try again later.");
         }
         
-        await bot.answerCallbackQuery(callbackId);
-        
     } catch (error) {
         console.error("❌ Error handling subscription callback:", error);
-        await bot.answerCallbackQuery(callbackId, { text: "Something went wrong while generating the payment link." });
+        await sendTelegramMessage(bot, chatId, "Something went wrong while generating the payment link.");
     }
 }
 
