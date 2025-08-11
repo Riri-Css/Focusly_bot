@@ -121,8 +121,8 @@ async function handleMessage(bot, msg) {
     const chatId = msg.chat.id;
     const userInput = msg.text?.trim();
 
-    console.log(`🔍 Received raw message: "${msg.text}"`);
-    console.log(`🔍 Trimmed user input: "${userInput}"`);
+    //console.log(`🔍 Received raw message: "${msg.text}"`);
+    //console.log(`🔍 Trimmed user input: "${userInput}"`);
 
     if (!userInput) {
       await sendTelegramMessage(bot, chatId, "Hmm, I didn’t catch that. Try sending it again.");
@@ -150,11 +150,12 @@ async function handleMessage(bot, msg) {
       const now = moment().tz(TIMEZONE).toDate();
       const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
       const isActive = user.subscriptionStatus === 'active' && !isExpired;
+      const isPremium = user.subscriptionPlan === 'premium' && isActive; // Determine if the user is a premium subscriber
 
       if (isActive) {
         await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
       } else {
-        await sendSubscriptionOptions(bot, chatId);
+        await sendSubscriptionOptions(bot, chatId, isPremium);
       }
       return;
     }

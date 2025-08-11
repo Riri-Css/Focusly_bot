@@ -63,13 +63,15 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
             return;
         }
 
-        const checklist = user.checklists.id(checklistId);
+        // Corrected: Use array find for a more robust lookup
+        const checklist = user.checklists.find(c => c.id === checklistId);
         if (!checklist) {
             await bot.answerCallbackQuery(callbackId, { text: "Checklist not found. Please try again." });
             return;
         }
 
-        const task = checklist.tasks.id(taskId);
+        // Corrected: Use array find for a more robust lookup
+        const task = checklist.tasks.find(t => t.id === taskId);
         if (!task) {
             await bot.answerCallbackQuery(callbackId, { text: "Task not found. Please try again." });
             return;
@@ -116,7 +118,8 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
             return;
         }
 
-        const checklist = user.checklists.id(checklistId);
+        // Corrected: Use array find for a more robust lookup
+        const checklist = user.checklists.find(c => c.id === checklistId);
         if (!checklist) {
             await bot.answerCallbackQuery(callbackId, { text: "Checklist not found. Please try again." });
             return;
