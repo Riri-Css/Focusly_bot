@@ -174,6 +174,12 @@ async function handleMessage(bot, msg) {
             }
             const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
             const checklist = await getChecklistByDate(user.telegramId, today);
+            
+            // 🐛 NOTE: This is the source of the "Checklist not found" error.
+            // If the user gets a checklist and then immediately asks for another,
+            // this check might fail and create a new checklist, invalidating the old one's buttons.
+            // Your getChecklistByDate function should find the *most recent un-submitted*
+            // checklist, regardless of the exact date, to prevent this.
             if (checklist) {
                 if (checklist.checkedIn) {
                     return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
@@ -194,6 +200,9 @@ async function handleMessage(bot, msg) {
                     return sendTelegramMessage(bot, chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
                 }
                 
+                // 🐛 NOTE: The "Unnamed Task" problem likely originates here.
+                // The `getSmartResponse` function needs to be explicitly prompted
+                // to return structured JSON with clear task descriptions.
                 const { daily_tasks, weekly_goal } = await getSmartResponse(user, `Create a daily checklist for my weekly goal: ${user.goalMemory.text}`, model);
 
                 if (daily_tasks && daily_tasks.length > 0) {
@@ -300,21 +309,32 @@ async function handleCallbackQuery(bot, callbackQuery) {
         switch (action) {
             case 'toggle_task':
                 const updatedChecklist = await toggleTaskCompletion(user, checklistId, taskId);
-                if (updatedChecklist) {
-                    const keyboard = createChecklistKeyboard(updatedChecklist);
-                    const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(updatedChecklist);
-                    
-                    bot.editMessageText(messageText, {
-                        chat_id: chatId,
-                        message_id: messageId,
-                        parse_mode: 'Markdown',
-                        reply_markup: keyboard
-                    });
+                
+                // 🐛 FIX: Add a check to handle cases where the checklist is not found.
+                if (!updatedChecklist) {
+                    console.error(`❌ Checklist ID ${checklistId} not found during toggle task.`);
+                    return sendTelegramMessage(bot, chatId, "Sorry, I couldn't find that checklist. It may have been replaced by a new one.");
                 }
+
+                const keyboard = createChecklistKeyboard(updatedChecklist);
+                const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(updatedChecklist);
+                
+                bot.editMessageText(messageText, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: keyboard
+                });
                 break;
 
             case 'submit_checkin':
+                // 🐛 FIX: Add a check to handle cases where the checklist is not found.
                 const submittedUser = await submitCheckin(user, checklistId);
+                if (!submittedUser) {
+                    console.error(`❌ Checklist ID ${checklistId} not found during check-in submission.`);
+                    return sendTelegramMessage(bot, chatId, "Sorry, I couldn't submit that checklist. It may have been replaced by a new one.");
+                }
+
                 const finalChecklist = await getChecklistByDate(user.telegramId, moment().tz(TIMEZONE).format('YYYY-MM-DD'));
                 const finalMessage = createFinalCheckinMessage(submittedUser, finalChecklist);
                 
