@@ -2,6 +2,7 @@
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const { getCurrentModelForUser } = require('../utils/subscriptionUtils');
+const crypto = require('crypto'); // <-- ADDED: Import crypto module
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -22,8 +23,10 @@ async function getOrCreateUser(telegramId) {
             },
             missedCheckins: 0,
             checkinStreak: 0,
-            checklists: [], // 🆕 Ensure the checklists array is initialized
-            goalMemory: null // 🆕 Ensure the goalMemory object is initialized
+            checklists: [],
+            goalMemory: null,
+            recentChatMemory: [],
+            importantMemory: []
         });
         await user.save();
         console.log(`✅ New user created: ${telegramId}`);
@@ -114,7 +117,7 @@ async function hasAIUsageAccess(user, type = 'general') {
     return false;
 }
 
-// 🆕 New: A more robust way to track AI usage
+// A more robust way to track AI usage
 async function trackAIUsage(user, type = 'general') {
     await resetDailyUsageIfNeeded(user);
     await resetWeeklyUsageIfNeeded(user);
@@ -134,7 +137,7 @@ async function getModelForUser(user) {
     return getCurrentModelForUser(user);
 }
 
-// --- CORRECTED addGoalMemory function to return a boolean ---
+// CORRECTED addGoalMemory function to return a boolean
 async function addGoalMemory(user, goalText) {
     if (user && goalText) {
         if (!user.goalMemory || user.goalMemory.text !== goalText) {
@@ -156,9 +159,9 @@ async function addRecentChat(user, message) {
         console.error("❌ Invalid user or message for addRecentChat.");
         return;
     }
-    
+
     const MAX_CHAT_HISTORY = 20;
-    
+
     user.recentChatMemory.push({
         text: message,
         timestamp: new Date()
@@ -190,7 +193,7 @@ const getChecklistByDate = async (telegramId, date) => {
     try {
         const user = await getUserByTelegramId(telegramId);
         if (!user || !user.checklists) return null;
-        
+
         return user.checklists.find(c => new Date(c.date).toDateString() === new Date(date).toDateString());
     } catch (error) {
         console.error("Error fetching checklist by date:", error);
@@ -212,13 +215,45 @@ async function updateChecklistStatus(telegramId, date, checkedIn, progressReport
     return checklist;
 }
 
-// 🆕 Updated: The missing daily reset and streak logic
+// New: Function to create a new checklist from AI tasks
+const createChecklist = async (user, weeklyGoal, dailyTasks) => {
+    try {
+        if (weeklyGoal) {
+            user.goalMemory = {
+                text: weeklyGoal,
+                date: new Date()
+            };
+        }
+
+        const today = new Date();
+        const newChecklist = {
+            id: crypto.randomUUID(), // <-- ADDED: Generate a unique ID here
+            date: today,
+            checkedIn: false,
+            tasks: dailyTasks.map(taskObj => ({
+                id: crypto.randomUUID(), // <-- ADDED: Generate a unique ID for each task
+                text: taskObj.task,
+                completed: false
+            })),
+        };
+
+        user.checklists.push(newChecklist);
+        await user.save();
+
+        console.log(`✅ New checklist created for user ${user.telegramId}.`);
+        return newChecklist;
+    } catch (error) {
+        console.error("Error creating new checklist:", error);
+        return null;
+    }
+};
+
+// The missing daily reset and streak logic
 async function handleDailyCheckinReset(user) {
     const today = moment().tz(TIMEZONE).startOf('day');
     const lastCheckinDate = user.lastCheckinDate ? moment(user.lastCheckinDate).tz(TIMEZONE).startOf('day') : null;
     const todayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).startOf('day').isSame(today));
 
-    // 🆕 Only perform the daily reset logic if it's a new day and we haven't already processed it
     if (!lastCheckinDate || lastCheckinDate.isBefore(today, 'day')) {
         const yesterday = moment(today).subtract(1, 'days');
         const lastChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).startOf('day').isSame(yesterday));
@@ -232,29 +267,30 @@ async function handleDailyCheckinReset(user) {
             user.missedCheckins += 1;
             console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
         }
-        
+
         user.lastCheckinDate = today.toDate();
         await user.save();
     }
 
-    // 🆕 Create a new checklist if one doesn't exist for today and the user has a goal
+    // Create a new checklist if one doesn't exist for today and the user has a goal
     if (!todayChecklist && user.goalMemory?.text) {
         const newChecklist = {
-            id: 'some_new_id', // ⚠️ You will need to generate a unique ID here
+            id: crypto.randomUUID(), // <-- ADDED: Generate a unique ID here
             date: today.toDate(),
             checkedIn: false,
             tasks: [{
-                id: 'task_id_1',
+                id: crypto.randomUUID(), // <-- ADDED: Generate a unique ID for the default task
                 text: 'Default task: Review your weekly goal',
                 completed: false
             }]
         };
-        // 🆕 A real checklist will be generated by the AI later. This is a placeholder.
+        // A real checklist will be generated by the AI later. This is a placeholder.
         user.checklists.push(newChecklist);
         await user.save();
         console.log(`✅ Default checklist created for user ${user.telegramId} as part of daily reset.`);
     }
 }
+
 
 module.exports = {
     getOrCreateUser,
@@ -270,5 +306,5 @@ module.exports = {
     updateChecklistStatus,
     getChecklistByDate,
     createChecklist,
-    handleDailyCheckinReset // 🆕 Export the new function
+    handleDailyCheckinReset
 };
