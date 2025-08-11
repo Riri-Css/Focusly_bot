@@ -47,8 +47,10 @@ function createChecklistMessage(checklist) {
         return "You have no tasks for today.";
     }
     const tasksText = checklist.tasks.map(task => {
+        // 🐛 FIX: Ensure task text exists before displaying it.
+        const taskText = task.text || "Unnamed Task";
         const status = task.completed ? '✅' : '⬜️';
-        return `${status} ${task.text}`;
+        return `${status} ${taskText}`;
     }).join('\n');
     return tasksText;
 }
