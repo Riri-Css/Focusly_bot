@@ -16,22 +16,31 @@ const TIMEZONE = 'Africa/Lagos';
  */
 async function handleCallbackQuery(bot, callbackQuery) {
     const { data, id: callbackId } = callbackQuery;
+    const userId = callbackQuery.from.id;
 
     console.log('--- Debugging Callback Query ---');
-    console.log('Received raw callback data:', data);
+    console.log(`Received raw callback data from user ${userId}:`, data);
 
-    // ✅ FIX: Acknowledge the callback immediately to prevent a timeout.
+    // Acknowledge the callback immediately to prevent a timeout.
     await bot.answerCallbackQuery(callbackId).catch(err => {
         console.error('❌ Failed to answer callback query immediately:', err);
     });
 
+    let parsedData;
     try {
-        const parsedData = JSON.parse(data);
-        console.log('✅ Parsed callback query data:', parsedData);
+        // Attempt to parse the data as JSON within its own try-catch block
+        parsedData = JSON.parse(data);
+        console.log('✅ Successfully parsed callback query data:', parsedData);
+    } catch (parseError) {
+        console.error('❌ Failed to parse callback data as JSON:', data, parseError);
+        await sendTelegramMessage(bot, userId, "An error occurred with the button data. Please try again or contact support.");
+        return; // Exit the function if parsing fails
+    }
 
+    // Now, with successfully parsed data, handle the rest of the logic
+    try {
         if (!parsedData.action) {
-            console.error('❌ Callback data is missing an "action" field.');
-            const userId = callbackQuery.from.id;
+            console.error('❌ Parsed callback data is missing an "action" field.');
             await sendTelegramMessage(bot, userId, "An internal error occurred. Please try again.");
             return;
         }
@@ -48,13 +57,11 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 break;
             default:
                 console.error(`❌ Unknown action received: ${parsedData.action}`);
-                const userId = callbackQuery.from.id;
                 await sendTelegramMessage(bot, userId, "I don't know how to handle that action.");
                 break;
         }
     } catch (error) {
-        console.error('❌ Error parsing callback data or handling action:', error);
-        const userId = callbackQuery.from.id;
+        console.error('❌ A fatal error occurred while handling a callback query:', error);
         await sendTelegramMessage(bot, userId, "An internal error occurred. Please try again.");
     }
 }
