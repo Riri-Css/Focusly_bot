@@ -1,27 +1,18 @@
+// userController.js
+// This file contains the logic for handling user messages and interacting with the database.
+
 const User = require('../models/user');
-const { v4: uuidv4 } = require('uuid');
-const { getChecklistFromGoal } = require('../utils/goal_helper');
+// const { v4: uuidv4 } = require('uuid'); // Removed this line
 const { getBotPrompt } = require('../utils/prompt_helper');
-const { LLM_MODEL } = require('../config/config');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getChecklistFromGoal } = require('../utils/openaiHelper');
 
-// Global variable for storing the generative model
-let genAI = null;
-let llmModel = null;
-
-// Initialize the generative AI model
-function getGenAI() {
-  if (!genAI) {
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      console.error("GOOGLE_API_KEY environment variable is not set.");
-      return null;
-    }
-    genAI = new GoogleGenerativeAI(apiKey);
-    llmModel = genAI.getGenerativeModel({ model: LLM_MODEL });
-    console.log("Generative AI model initialized.");
-  }
-  return llmModel;
+/**
+ * Generates a simple unique ID string using the current timestamp and a random number.
+ * This function replaces the need for the 'uuid' package.
+ * @returns {string} A unique ID.
+ */
+function generateUniqueId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
 /**
@@ -60,9 +51,9 @@ async function createChecklist(user, weeklyGoal, dailyTasks) {
         return null;
     }
 
-    const newChecklistId = uuidv4();
+    const newChecklistId = generateUniqueId();
     const newTasks = dailyTasks.map(task => ({
-        id: uuidv4(),
+        id: generateUniqueId(),
         text: task.task,
         completed: false,
     }));
@@ -116,8 +107,9 @@ async function handleDailyCheckinReset(user) {
         let dailyChecklist = null;
         if (user.goalMemory && user.goalMemory.text) {
             try {
-                // Fetch the goal checklist from the LLM
-                dailyChecklist = await getChecklistFromGoal(llmModel, user.goalMemory.text);
+                // We now call the new helper function to get the checklist.
+                // The LLM model object is now handled internally by the helper.
+                dailyChecklist = await getChecklistFromGoal(user.goalMemory.text);
             } catch (error) {
                 console.error("Error generating daily checklist from goal:", error);
                 // Fallback to a default checklist if the LLM call fails
@@ -359,5 +351,4 @@ module.exports = {
     getDailyCheckinKeyboard,
     handleCallbackQuery,
     handleMessage,
-    getGenAI,
 };
