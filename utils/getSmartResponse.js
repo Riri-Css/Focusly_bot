@@ -14,9 +14,9 @@ Your responses must be structured as a JSON object with a specific 'intent' and 
 
 **RULES:**
 - **Goal Setting:** When a user sets a new goal, you must evaluate the timeline.
-    - If the timeline is unrealistic (e.g., 'make ₦2M in 2 weeks'), respond with a direct, sassy message challenging them to be realistic. Then, propose a more achievable goal or timeline.
-    - If the timeline is too long (e.g., 'save ₦50K in 6 months earning ₦300K/weekly'), point this out and suggest a more efficient timeline.
-    - After a reasonable goal and timeline are established, break it down into a weekly goal and 3-5 concrete, actionable daily tasks.
+    - If the timeline is unrealistic (e.g., 'make ₦2M in 2 weeks'), respond with a direct, sassy message challenging them to be realistic. Then, propose a more achievable goal or timeline.
+    - If the timeline is too long (e.g., 'save ₦50K in 6 months earning ₦300K/weekly'), point this out and suggest a more efficient timeline.
+    - After a reasonable goal and timeline are established, break it down into a weekly goal and 3-5 concrete, actionable daily tasks.
 - **Task Assistance:** If a user is confused or asks for help with a task (e.g., "how do I market on LinkedIn?"), act as a specialized advisor. Give specific, actionable advice on content ideas, methods, etc.
 - **Accountability:** If a user misses 3 or more check-ins, activate "Strict Mode." Your tone becomes less forgiving and more demanding.
 - **General Conversation:** Keep non-goal-related conversations brief and to the point.
@@ -33,26 +33,27 @@ Respond in one of these JSON formats:
 
 // For setting a new goal or checklist
 {
-  "intent": "create_checklist",
-  "challenge_message": "optional sassy message if the goal/timeline is unrealistic",
-  "weekly_goal": "A concise, specific weekly goal.",
-  "daily_tasks": [
-    {"task": "Daily task 1"},
-    {"task": "Daily task 2"},
-    {"task": "Daily task 3"}
-  ]
+  "intent": "create_checklist",
+  "challenge_message": "optional sassy message if the goal/timeline is unrealistic",
+  "weekly_goal": "A concise, specific weekly goal.",
+  "daily_tasks": [
+    // 🐛 FIX: The key for the task description has been changed to "text"
+    {"text": "Daily task 1"},
+    {"text": "Daily task 2"},
+    {"text": "Daily task 3"}
+  ]
 }
 
 // For giving advice or discussing a strategy
 {
-  "intent": "give_advice",
-  "message": "A detailed, actionable message with advice or a new strategy."
+  "intent": "give_advice",
+  "message": "A detailed, actionable message with advice or a new strategy."
 }
 
 // For general conversation or check-ins
 {
-  "intent": "general",
-  "message": "A short, direct message."
+  "intent": "general",
+  "message": "A short, direct message."
 }
 `.trim();
 
@@ -94,32 +95,35 @@ Respond in one of these JSON formats:
     if (!Array.isArray(structured.messages)) {
       structured.messages = [String(structured.messages || "I'm here to help.")];
     }
-    
-    // 🆕 Updated return block to handle the new JSON formats
-    const defaultResponse = {
-      intent: 'general',
-      message: "I'm here to help you get your stuff done. What's the plan?",
-      challenge_message: null,
-      weekly_goal: null,
-      daily_tasks: null
-    };
+    
+    const defaultResponse = {
+      intent: 'general',
+      message: "I'm here to help you get your stuff done. What's the plan?",
+      challenge_message: null,
+      weekly_goal: null,
+      daily_tasks: null
+    };
 
-    let response = { ...defaultResponse };
+    let response = { ...defaultResponse };
 
-    if (structured.intent === 'create_checklist') {
-      response.intent = 'create_checklist';
-      response.challenge_message = structured.challenge_message || null;
-      response.weekly_goal = structured.weekly_goal || null;
-      response.daily_tasks = Array.isArray(structured.daily_tasks) ? structured.daily_tasks : [];
-    } else if (structured.intent === 'give_advice') {
-      response.intent = 'give_advice';
-      response.message = structured.message || response.message;
-    } else {
-      response.intent = structured.intent || 'general';
-      response.message = structured.message || (Array.isArray(structured.messages) ? structured.messages.join('\n') : structured.messages) || response.message;
-    }
+    if (structured.intent === 'create_checklist') {
+      response.intent = 'create_checklist';
+      response.challenge_message = structured.challenge_message || null;
+      response.weekly_goal = structured.weekly_goal || null;
+      
+      // 🐛 FIX: Add a mapping to ensure the 'text' property is always present
+      response.daily_tasks = Array.isArray(structured.daily_tasks)
+        ? structured.daily_tasks.map(task => ({ text: task.text || task.task || "Unnamed Task" }))
+        : [];
+    } else if (structured.intent === 'give_advice') {
+      response.intent = 'give_advice';
+      response.message = structured.message || response.message;
+    } else {
+      response.intent = structured.intent || 'general';
+      response.message = structured.message || (Array.isArray(structured.messages) ? structured.messages.join('\n') : structured.messages) || response.message;
+    }
 
-    return response;
+    return response;
 
   } catch (error) {
     console.error('OpenAI error:', error);
