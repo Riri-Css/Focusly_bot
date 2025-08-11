@@ -7,7 +7,7 @@ const {
   addImportantMemory,
   createChecklist,
   getChecklistByDate,
-  handleDailyCheckinReset // 🆕 Imported the new daily reset function
+  handleDailyCheckinReset
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { getSmartResponse } = require('../utils/getSmartResponse');
@@ -75,7 +75,7 @@ function createChecklistKeyboard(checklist) {
 
   const submitButton = [{
     text: '✅ Submit Check-in',
-    // Simplified and guaranteed JSON string
+    // ✅ FIX: The callback_data is updated to include the checklistId
     callback_data: JSON.stringify({
       action: 'submit_checkin',
       checklistId: checklist.id
@@ -129,7 +129,7 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    let user = await getOrCreateUser(userId); // 🆕 Use getOrCreateUser for consistency
+    let user = await getOrCreateUser(userId);
 
     // 🆕 Call the daily check-in reset logic at the beginning of message handling
     await handleDailyCheckinReset(user);
@@ -150,8 +150,8 @@ async function handleMessage(bot, msg) {
       const now = moment().tz(TIMEZONE).toDate();
       const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
       const isActive = user.subscriptionStatus === 'active' && !isExpired;
-      const isPremium = user.subscriptionPlan === 'premium' && isActive; // Determine if the user is a premium subscriber
-
+      const isPremium = user.subscriptionPlan === 'premium' && isActive;
+      
       if (isActive) {
         await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
       } else {
