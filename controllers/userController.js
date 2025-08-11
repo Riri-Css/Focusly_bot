@@ -21,25 +21,45 @@ function generateUniqueId() {
  * @returns {Promise<User>} The user document.
  */
 async function getOrCreateUser(telegramId) {
-    let user = await User.findOne({ telegramId: telegramId });
-    if (!user) {
-        user = new User({
-            telegramId: telegramId,
-            streak: 0,
-            lastCheckin: null,
-            goalMemory: null,
-            checklists: [],
-            lastCheckinDate: null,
-            consecutiveChecks: 0,
-            subscriptionStatus: 'inactive', // Default to inactive
-            subscriptionPlan: 'free',      // Default to free
-            aiUsageCount: 0,
-            onboardingStep: 'start', // Initial onboarding step
-        });
-        await user.save();
-        console.log(`New user created: ${telegramId}`);
+    try {
+        let user = await User.findOne({ telegramId: telegramId });
+        if (!user) {
+            user = new User({
+                telegramId: telegramId,
+                streak: 0,
+                lastCheckin: null,
+                goalMemory: { text: null },
+                checklists: [],
+                lastCheckinDate: null,
+                consecutiveChecks: 0,
+                subscriptionStatus: 'inactive',
+                subscriptionPlan: 'free',
+                aiUsageCount: 0,
+                onboardingStep: 'start',
+                recentChats: [],
+                importantMemories: [],
+            });
+            await user.save();
+            console.log(`New user created: ${telegramId}`);
+        }
+        // Handle cases where existing users in the database don't have these fields yet
+        if (!user.recentChats) {
+            user.recentChats = [];
+        }
+        if (!user.importantMemories) {
+            user.importantMemories = [];
+        }
+        if (!user.onboardingStep) {
+            user.onboardingStep = 'start';
+        }
+        if (!user.goalMemory) {
+            user.goalMemory = { text: null };
+        }
+        return user;
+    } catch (error) {
+        console.error("❌ Error in getOrCreateUser:", error);
+        return null;
     }
-    return user;
 }
 
 /**
@@ -55,26 +75,31 @@ async function createChecklist(user, weeklyGoal, dailyTasks) {
         return null;
     }
 
-    const newChecklistId = generateUniqueId();
-    const newTasks = dailyTasks.map(task => ({
-        id: generateUniqueId(),
-        text: task.task,
-        completed: false,
-    }));
+    try {
+        const newChecklistId = generateUniqueId();
+        const newTasks = dailyTasks.map(task => ({
+            id: generateUniqueId(),
+            text: task.text,
+            completed: false,
+        }));
 
-    const newChecklist = {
-        id: newChecklistId,
-        date: new Date(),
-        weeklyGoal: weeklyGoal,
-        tasks: newTasks,
-        checkedIn: false,
-    };
+        const newChecklist = {
+            id: newChecklistId,
+            date: new Date(),
+            weeklyGoal: weeklyGoal,
+            tasks: newTasks,
+            checkedIn: false,
+        };
 
-    user.checklists.push(newChecklist);
-    await user.save();
+        user.checklists.push(newChecklist);
+        await user.save();
 
-    console.log(`New checklist created for user ${user.telegramId} with ID: ${newChecklistId}`);
-    return newChecklist;
+        console.log(`New checklist created for user ${user.telegramId} with ID: ${newChecklistId}`);
+        return newChecklist;
+    } catch (error) {
+        console.error("❌ Error creating checklist:", error);
+        return null;
+    }
 }
 
 /**
@@ -84,12 +109,17 @@ async function createChecklist(user, weeklyGoal, dailyTasks) {
  * @returns {Promise<Object|null>} The checklist object or null if not found.
  */
 async function getChecklistByDate(telegramId, dateString) {
-    const user = await User.findOne({ telegramId });
-    if (!user) {
+    try {
+        const user = await User.findOne({ telegramId });
+        if (!user) {
+            return null;
+        }
+        const targetDate = moment.tz(dateString, TIMEZONE).startOf('day').toDate();
+        return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(targetDate, 'day'));
+    } catch (error) {
+        console.error("❌ Error fetching checklist by date:", error);
         return null;
     }
-    const targetDate = moment.tz(dateString, TIMEZONE).startOf('day').toDate();
-    return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(targetDate, 'day'));
 }
 
 /**
@@ -102,22 +132,26 @@ async function handleDailyCheckinReset(user) {
         console.error("User object is null, cannot handle daily check-in.");
         return;
     }
+    
+    try {
+        const now = moment().tz(TIMEZONE);
+        const todayStart = now.startOf('day');
 
-    const now = moment().tz(TIMEZONE);
-    const todayStart = now.startOf('day');
-
-    // If the user has not checked in today
-    if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(todayStart, 'day')) {
-        const yesterdayStart = todayStart.clone().subtract(1, 'day');
-        // If they did not check in yesterday, reset streak
-        if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(yesterdayStart, 'day')) {
-            if (user.streak > 0) {
-                console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
-                user.streak = 0;
+        // If the user has not checked in today
+        if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(todayStart, 'day')) {
+            const yesterdayStart = todayStart.clone().subtract(1, 'day');
+            // If they did not check in yesterday, reset streak
+            if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(yesterdayStart, 'day')) {
+                if (user.streak > 0) {
+                    console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
+                    user.streak = 0;
+                }
             }
         }
+        await user.save();
+    } catch (error) {
+        console.error("❌ Error handling daily check-in reset:", error);
     }
-    await user.save();
 }
 
 /**
@@ -128,21 +162,30 @@ async function handleDailyCheckinReset(user) {
  * @returns {Object|null} The updated checklist or null if not found.
  */
 async function toggleTaskCompletion(user, checklistId, taskId) {
-    const checklist = user.checklists.find(c => c.id === checklistId);
-    if (!checklist) {
-        console.error(`Checklist not found with ID: ${checklistId}`);
+    if (!user) {
         return null;
     }
 
-    const task = checklist.tasks.find(t => t.id === taskId);
-    if (!task) {
-        console.error(`Task not found with ID: ${taskId} in checklist ${checklistId}`);
+    try {
+        const checklist = user.checklists.find(c => c.id === checklistId);
+        if (!checklist) {
+            console.error(`Checklist not found with ID: ${checklistId}`);
+            return null;
+        }
+
+        const task = checklist.tasks.find(t => t.id === taskId);
+        if (!task) {
+            console.error(`Task not found with ID: ${taskId} in checklist ${checklistId}`);
+            return null;
+        }
+
+        task.completed = !task.completed;
+        await user.save();
+        return checklist;
+    } catch (error) {
+        console.error("❌ Error toggling task completion:", error);
         return null;
     }
-
-    task.completed = !task.completed;
-    await user.save();
-    return checklist;
 }
 
 /**
@@ -156,34 +199,39 @@ async function submitCheckin(user, checklistId) {
         return "Error: User not found.";
     }
 
-    const checklist = user.checklists.find(c => c.id === checklistId);
-    if (!checklist) {
-        return "Error: Checklist not found.";
-    }
-    
-    // Use moment to check if it's the same day
-    const todayStart = moment().tz(TIMEZONE).startOf('day');
-    const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
+    try {
+        const checklist = user.checklists.find(c => c.id === checklistId);
+        if (!checklist) {
+            return "Error: Checklist not found.";
+        }
+        
+        // Use moment to check if it's the same day
+        const todayStart = moment().tz(TIMEZONE).startOf('day');
+        const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
 
-    if (checklist.checkedIn || lastCheckinIsToday) {
-      return "You've already submitted your check-in for today!";
-    }
+        if (checklist.checkedIn || lastCheckinIsToday) {
+          return "You've already submitted your check-in for today!";
+        }
 
-    const totalTasks = checklist.tasks.length;
-    const completedTasks = checklist.tasks.filter(t => t.completed).length;
+        const totalTasks = checklist.tasks.length;
+        const completedTasks = checklist.tasks.filter(t => t.completed).length;
 
-    user.lastCheckinDate = new Date();
-    user.streak += 1;
-    checklist.checkedIn = true;
-    await user.save();
+        user.lastCheckinDate = new Date();
+        user.streak += 1;
+        checklist.checkedIn = true;
+        await user.save();
 
-    const checkinSummary = `*✅ Daily Check-in Submitted!*
+        const checkinSummary = `*✅ Daily Check-in Submitted!*
 
 Weekly Goal: ${checklist.weeklyGoal || "No goal set yet."}
 Today's Progress: ${completedTasks}/${totalTasks} tasks completed.
 Your current streak: ${user.streak} days.
 `;
-    return checkinSummary;
+        return checkinSummary;
+    } catch (error) {
+        console.error("❌ Error submitting check-in:", error);
+        return "An error occurred while submitting your check-in.";
+    }
 }
 
 /**
@@ -192,12 +240,25 @@ Your current streak: ${user.streak} days.
  * @param {string} chatText The text of the chat message.
  */
 async function addRecentChat(user, chatText) {
-  user.recentChats.push({ text: chatText, timestamp: new Date() });
-  // Keep only the last 10 messages to avoid the array growing too large.
-  if (user.recentChats.length > 10) {
-      user.recentChats.shift();
+  if (!user) {
+    console.error("User object is null, cannot add chat.");
+    return;
   }
-  await user.save();
+  
+  try {
+      // Ensure recentChats is an array before pushing
+      if (!user.recentChats) {
+        user.recentChats = [];
+      }
+      user.recentChats.push({ text: chatText, timestamp: new Date() });
+      // Keep only the last 10 messages to avoid the array growing too large.
+      if (user.recentChats.length > 10) {
+          user.recentChats.shift();
+      }
+      await user.save();
+  } catch (error) {
+      console.error("❌ Error adding recent chat:", error);
+  }
 }
 
 /**
@@ -206,8 +267,20 @@ async function addRecentChat(user, chatText) {
  * @param {string} memoryText The text of the important memory.
  */
 async function addImportantMemory(user, memoryText) {
-  user.importantMemories.push({ text: memoryText, timestamp: new Date() });
-  await user.save();
+  if (!user) {
+    console.error("User object is null, cannot add memory.");
+    return;
+  }
+
+  try {
+      if (!user.importantMemories) {
+        user.importantMemories = [];
+      }
+      user.importantMemories.push({ text: memoryText, timestamp: new Date() });
+      await user.save();
+  } catch (error) {
+      console.error("❌ Error adding important memory:", error);
+  }
 }
 
 module.exports = {
