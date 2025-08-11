@@ -1,7 +1,5 @@
 // File: src/handlers/messageHandlers.js
-// This version includes the daily check-in reset logic, AI usage tracking,
-// the original AI-driven checklist creation feature, and a fix for the
-// inline button callback data to ensure checklist IDs are correctly passed.
+// This version uses the existing userController to handle all database operations.
 
 const {
     getUserByTelegramId,
@@ -10,17 +8,16 @@ const {
     addImportantMemory,
     getChecklistByDate,
     handleDailyCheckinReset,
-    submitCheckin
+    submitCheckin,
+    createAndSaveChecklist, // Assuming this new function exists in your userController
+    getChecklistById, // Assuming this new function exists in your userController
+    updateChecklist // Assuming this new function exists in your userController
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { sendSubscriptionOptions } = require('../utils/telegram');
 const moment = require('moment-timezone');
-const { getFirestore, doc, setDoc, getDoc } = require('firebase/firestore');
 const { v4: uuidv4 } = require('uuid'); // Used for generating unique IDs
-
-const { app } = require('../utils/firebase');
-const db = getFirestore(app);
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -104,35 +101,6 @@ function createFinalCheckinMessage(user, checklist) {
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-// 🆕 New function to save a checklist to the database
-async function saveChecklistToDb(userId, checklist) {
-    try {
-        const checklistRef = doc(db, 'users', userId, 'checklists', checklist.id);
-        await setDoc(checklistRef, checklist);
-        console.log(`✅ Checklist ${checklist.id} saved for user ${userId}.`);
-        return checklist;
-    } catch (error) {
-        console.error('❌ Error saving checklist:', error);
-        return null;
-    }
-}
-
-// 🆕 New function to get a checklist by ID
-async function getChecklistById(userId, checklistId) {
-    try {
-        const checklistRef = doc(db, 'users', userId, 'checklists', checklistId);
-        const docSnap = await getDoc(checklistRef);
-        if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() };
-        }
-        return null;
-    } catch (error) {
-        console.error('❌ Error getting checklist by ID:', error);
-        return null;
-    }
-}
-
 
 /**
  * Handles incoming messages from the user.
@@ -225,7 +193,7 @@ async function handleMessage(bot, msg) {
                         checkedIn: false,
                         createdAt: new Date().toISOString()
                     };
-                    await saveChecklistToDb(userId, newChecklist);
+                    await createAndSaveChecklist(userId, newChecklist);
 
                     const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                     const keyboard = createChecklistKeyboard(newChecklist);
@@ -291,7 +259,7 @@ async function handleMessage(bot, msg) {
                     checkedIn: false,
                     createdAt: new Date().toISOString()
                 };
-                await saveChecklistToDb(userId, newChecklist);
+                await createAndSaveChecklist(userId, newChecklist);
 
                 const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
@@ -332,7 +300,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         }
 
         const [action, checklistId, taskId] = data.split('|');
-        const checklist = await getChecklistById(user.telegramId, checklistId);
+        let checklist = await getChecklistById(user.telegramId, checklistId);
 
         if (!checklist) {
             console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
@@ -345,7 +313,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 const taskToToggle = checklist.tasks.find(t => t.id === taskId);
                 if (taskToToggle) {
                     taskToToggle.completed = !taskToToggle.completed;
-                    await saveChecklistToDb(user.telegramId, checklist);
+                    await updateChecklist(user.telegramId, checklist);
 
                     const keyboard = createChecklistKeyboard(checklist);
                     const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
@@ -368,7 +336,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 }
 
                 checklist.checkedIn = true;
-                await saveChecklistToDb(user.telegramId, checklist);
+                await updateChecklist(user.telegramId, checklist);
                 
                 const submittedUser = await submitCheckin(user, checklistId);
                 
