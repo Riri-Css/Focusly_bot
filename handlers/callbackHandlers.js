@@ -21,7 +21,6 @@ async function handleCallbackQuery(bot, callbackQuery) {
     console.log('Received raw callback data:', data);
 
     // ✅ FIX: Acknowledge the callback immediately to prevent a timeout.
-    // This tells Telegram "I got it" before we start any time-consuming logic.
     await bot.answerCallbackQuery(callbackId).catch(err => {
         console.error('❌ Failed to answer callback query immediately:', err);
     });
@@ -29,6 +28,13 @@ async function handleCallbackQuery(bot, callbackQuery) {
     try {
         const parsedData = JSON.parse(data);
         console.log('✅ Parsed callback query data:', parsedData);
+
+        if (!parsedData.action) {
+            console.error('❌ Callback data is missing an "action" field.');
+            const userId = callbackQuery.from.id;
+            await sendTelegramMessage(bot, userId, "An internal error occurred. Please try again.");
+            return;
+        }
 
         switch (parsedData.action) {
             case 'toggle_task':
@@ -41,13 +47,13 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 await handleSubscription(bot, callbackQuery, parsedData);
                 break;
             default:
-                // Since the callback was already answered, we don't need to answer again.
+                console.error(`❌ Unknown action received: ${parsedData.action}`);
+                const userId = callbackQuery.from.id;
+                await sendTelegramMessage(bot, userId, "I don't know how to handle that action.");
                 break;
         }
     } catch (error) {
         console.error('❌ Error parsing callback data or handling action:', error);
-        // The error here will be logged, but the user won't get a timeout message.
-        // We can send a new message to the user for a better experience.
         const userId = callbackQuery.from.id;
         await sendTelegramMessage(bot, userId, "An internal error occurred. Please try again.");
     }
@@ -62,7 +68,14 @@ async function handleCallbackQuery(bot, callbackQuery) {
 async function handleTaskToggle(bot, callbackQuery, parsedData) {
     const { from, message } = callbackQuery;
     const telegramId = from.id;
+
+    // ✅ FIX: Add a check to ensure both checklistId and taskId exist.
     const { checklistId, taskId } = parsedData;
+    if (!checklistId || !taskId) {
+        console.error('❌ Incomplete callback data for task toggle. Missing checklistId or taskId.');
+        await sendTelegramMessage(bot, telegramId, "An error occurred. The task information was incomplete. Please try again.");
+        return;
+    }
 
     try {
         const user = await User.findOne({ telegramId });
@@ -114,7 +127,14 @@ async function handleTaskToggle(bot, callbackQuery, parsedData) {
 async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
     const { from, message } = callbackQuery;
     const telegramId = from.id;
+
+    // ✅ FIX: Add a check to ensure checklistId exists.
     const { checklistId } = parsedData;
+    if (!checklistId) {
+        console.error('❌ Incomplete callback data for check-in. Missing checklistId.');
+        await sendTelegramMessage(bot, telegramId, "An error occurred. The check-in information was incomplete. Please try again.");
+        return;
+    }
 
     try {
         const user = await User.findOne({ telegramId });
@@ -138,7 +158,7 @@ async function handleSubmitCheckin(bot, callbackQuery, parsedData) {
         if (completedTasks === totalTasks) {
             completionMessage = `**Amazing! You completed all your tasks today!** 🎉 Keep up this incredible momentum! Your consistency will lead to great results.`;
         } else if (completedTasks > 0) {
-            completionMessage = `**Great job!** You completed ${completedTasks} out of ${totalTasks} tasks today. Every step forward counts! Let's aim to knock out the rest tomorrow. �`;
+            completionMessage = `**Great job!** You completed ${completedTasks} out of ${totalTasks} tasks today. Every step forward counts! Let's aim to knock out the rest tomorrow. 💪`;
         } else {
             completionMessage = `**That's okay!** You can't win them all, but every day is a new chance to try. Let's make tomorrow a day of progress!`;
         }
@@ -168,8 +188,15 @@ async function handleSubscription(bot, callbackQuery, parsedData) {
     const userId = from.id;
     const chatId = message.chat.id;
     
+    // ✅ FIX: Add a check to ensure plan exists.
+    const { plan } = parsedData;
+    if (!plan) {
+        console.error('❌ Incomplete callback data for subscription. Missing plan.');
+        await sendTelegramMessage(bot, userId, "An error occurred. The plan information was incomplete. Please try again.");
+        return;
+    }
+
     try {
-        const { plan } = parsedData;
         const amount = plan === 'premium' ? 1000 : 500;
         const user = await getUserByTelegramId(userId);
 
