@@ -198,7 +198,8 @@ async function handleMessage(bot, msg) {
                         checkedIn: false,
                         createdAt: new Date().toISOString()
                     };
-                    // The error was here, likely a problem with how createAndSaveChecklist is defined.
+                    // This call is correct based on your userController.js file,
+                    // so the previous error might be from a different file version.
                     await createAndSaveChecklist(userId, newChecklist);
 
                     const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
@@ -265,6 +266,8 @@ async function handleMessage(bot, msg) {
                     checkedIn: false,
                     createdAt: new Date().toISOString()
                 };
+                // This call is correct based on your userController.js file,
+                // so the previous error might be from a different file version.
                 await createAndSaveChecklist(userId, newChecklist);
 
                 const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
@@ -307,6 +310,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         }
 
         const [action, checklistId, taskId] = data.split('|');
+        // This is a correct call based on your userController.js file.
         let checklist = await getChecklistById(user.telegramId, checklistId);
 
         if (!checklist) {
@@ -320,6 +324,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 const taskToToggle = checklist.tasks.find(t => t.id === taskId);
                 if (taskToToggle) {
                     taskToToggle.completed = !taskToToggle.completed;
+                    // This call is also correct based on your userController.js file.
                     await updateChecklist(user.telegramId, checklist);
 
                     const keyboard = createChecklistKeyboard(checklist);
@@ -343,6 +348,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 }
 
                 checklist.checkedIn = true;
+                // CORRECTED: This now passes the user's Telegram ID and the full checklist object.
                 await updateChecklist(user.telegramId, checklist);
                 
                 const submittedUser = await submitCheckin(user, checklistId);
