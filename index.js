@@ -1,7 +1,5 @@
 // File: index.js
 require('dotenv').config();
-const express = require('express');
-const mongoose = require('mongoose');
 const TelegramBot = require('node-telegram-bot-api');
 
 // Import the SINGLE bot instance from botInstance.js
@@ -10,82 +8,23 @@ const bot = require('./botInstance');
 // Import handlers for different types of updates
 const { handleMessage } = require('./handlers/messageHandlers');
 const { handleCallbackQuery } = require('./handlers/callbackHandlers');
-const paystackWebhook = require('./routes/paystackWebhook');
 
-const app = express();
-const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/webhook`;
-
-// Webhook setup with success/failure logging
-bot.setWebHook(webhookUrl, {
-    allowed_updates: ['message', 'callback_query']
-})
-.then(success => {
-    if (success) {
-        console.log(`✅ Webhook successfully set to: ${webhookUrl}`);
-    } else {
-        console.error(`❌ Webhook failed to set: ${webhookUrl}`);
-    }
-})
-.catch(error => {
-    console.error(`❌ Error setting webhook:`, error);
-});
-
-app.use(express.json());
-
-// Main webhook endpoint that routes updates
-app.post(`/webhook`, async (req, res) => {
+// Listen for new text messages
+bot.on('message', async (msg) => {
     try {
-        const update = req.body;
-        
-        if (update.message) {
-            console.log("📩 Incoming message:", update.message.text);
-            await handleMessage(bot, update.message);
-        } 
-        else if (update.callback_query) {
-            // ✅ Added better logging for debugging buttons
-            console.log("🔘 Incoming callback query:");
-            console.log("   From User ID:", update.callback_query.from?.id);
-            console.log("   Username:", update.callback_query.from?.username);
-            console.log("   Data:", update.callback_query.data);
-
-            // ✅ Added safety check
-            if (typeof handleCallbackQuery === 'function') {
-                await handleCallbackQuery(bot, update.callback_query);
-            } else {
-                console.error("❌ handleCallbackQuery is not a function!");
-            }
-        }
-        else {
-            console.log("ℹ️ Unknown update type received:", update);
-        }
-        
-        res.sendStatus(200);
-    } catch (err) {
-        console.error("❌ Error in webhook handler:", err);
-        res.sendStatus(500);
+        await handleMessage(bot, msg);
+    } catch (error) {
+        console.error('Error handling message:', error);
     }
 });
 
-app.use('/paystack/webhook', paystackWebhook);
-
-// Database connection
-mongoose.connect(process.env.MONGODB_URI, {
-    useUnifiedTopology: true,
-})
-.then(() => {
-    console.log('✅ MongoDB connected');
-})
-.catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
+// Listen for callback queries (button presses)
+bot.on('callback_query', async (query) => {
+    try {
+        await handleCallbackQuery(bot, query);
+    } catch (error) {
+        console.error('Error handling callback query:', error);
+    }
 });
 
-// Health check
-app.get('/', (req, res) => {
-    res.send('🚀 Focusly bot server is running');
-});
-
-// Start the server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🌐 Server running on port ${PORT}`);
-});
+module.exports = bot; // Export bot for use elsewhere (if needed)
