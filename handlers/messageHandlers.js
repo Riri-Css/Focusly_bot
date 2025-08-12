@@ -153,6 +153,20 @@ async function handleMessage(bot, msg) {
 
         const command = userInput.toLowerCase();
 
+        if (userInput === '/testbutton') {
+  await sendTelegramMessage(bot, chatId, "Click a button below:", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Test Callback", callback_data: "test_callback" }
+        ]
+      ]
+    }
+  });
+  return;
+}
+
+
         if (command === '/start') {
             if (user.onboardingStep === 'awaiting_goal') {
                 return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
