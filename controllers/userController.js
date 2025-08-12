@@ -69,25 +69,32 @@ async function getOrCreateUser(telegramId) {
  * @returns {Promise<Object|null>} The newly created checklist or null if an error occurs.
  */
 async function createAndSaveChecklist(telegramId, newChecklist) {
-    try {
-        const user = await User.findOne({ telegramId });
-        if (!user) {
-            console.error("User not found, cannot save checklist.");
-            return null;
-        }
+   try {
+    const user = await User.findOne({ userId });
 
-        // Add the new checklist to the user's checklists array
-        user.checklists.push(newChecklist);
-        await user.save();
+    if (user) {
+      // Create the new checklist object with the required date field
+      const newChecklist = {
+        weeklyGoal,
+        date: new Date(), // <-- ADD THIS LINE
+        tasks: checklistData.dailyTasks.map(task => ({
+          text: task.text,
+          completed: false,
+        })),
+      };
 
-        console.log(`New checklist created for user ${telegramId} with ID: ${newChecklist.id}`);
-        return newChecklist;
-    } catch (error) {
-        console.error("❌ Error creating and saving checklist:", error);
-        return null;
+      user.checklists.unshift(newChecklist);
+      await user.save();
+      return newChecklist;
+    } else {
+      console.error(`User with ID ${userId} not found.`);
+      return null;
     }
+  } catch (error) {
+    console.error('Error creating and saving checklist:', error);
+    throw error;
+  }
 }
-
 /**
  * Retrieves a checklist by its date for a specific user.
  * @param {string} telegramId The user's Telegram ID.
