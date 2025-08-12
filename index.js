@@ -40,10 +40,23 @@ app.post(`/webhook`, async (req, res) => {
         if (update.message) {
             console.log("📩 Incoming message:", update.message.text);
             await handleMessage(bot, update.message);
-        } else if (update.callback_query) {
-            // 🚨 We need to see this line!
-            console.log("🔘 Incoming callback query:", update.callback_query.data);
-            await handleCallbackQuery(bot, update.callback_query);
+        } 
+        else if (update.callback_query) {
+            // ✅ Added better logging for debugging buttons
+            console.log("🔘 Incoming callback query:");
+            console.log("   From User ID:", update.callback_query.from?.id);
+            console.log("   Username:", update.callback_query.from?.username);
+            console.log("   Data:", update.callback_query.data);
+
+            // ✅ Added safety check
+            if (typeof handleCallbackQuery === 'function') {
+                await handleCallbackQuery(bot, update.callback_query);
+            } else {
+                console.error("❌ handleCallbackQuery is not a function!");
+            }
+        }
+        else {
+            console.log("ℹ️ Unknown update type received:", update);
         }
         
         res.sendStatus(200);
@@ -58,9 +71,11 @@ app.use('/paystack/webhook', paystackWebhook);
 // Database connection
 mongoose.connect(process.env.MONGODB_URI, {
     useUnifiedTopology: true,
-}).then(() => {
+})
+.then(() => {
     console.log('✅ MongoDB connected');
-}).catch((err) => {
+})
+.catch((err) => {
     console.error('❌ MongoDB connection error:', err);
 });
 
