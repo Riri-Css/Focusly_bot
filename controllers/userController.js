@@ -318,14 +318,16 @@ async function addImportantMemory(user, memoryText) {
 
 module.exports = {
     getOrCreateUser,
-    createChecklist,
-    createAndSaveChecklist, // <-- Added this line
+    // The line below was causing a ReferenceError because the function
+    // `createChecklist` was not defined in this file.
+    // createChecklist,
+    createAndSaveChecklist,
     getChecklistByDate,
     handleDailyCheckinReset,
     toggleTaskCompletion,
     submitCheckin,
     addRecentChat,
     addImportantMemory,
-    getChecklistById, // <-- Added this line
-    updateChecklist // <-- Added this line
+    getChecklistById,
+    updateChecklist
 };
