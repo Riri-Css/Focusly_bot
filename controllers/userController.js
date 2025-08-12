@@ -63,38 +63,36 @@ async function getOrCreateUser(telegramId) {
 }
 
 /**
- * Creates a new checklist for the user with unique IDs for the checklist and tasks.
+ * Creates and saves a new checklist for a user.
  * @param {string} telegramId The unique ID of the user on Telegram.
  * @param {object} newChecklist The checklist object to be saved.
  * @returns {Promise<Object|null>} The newly created checklist or null if an error occurs.
  */
 async function createAndSaveChecklist(telegramId, newChecklist) {
-   try {
-    const user = await User.findOne({ userId });
+    try {
+        const user = await User.findOne({ telegramId }); // <-- FIXED: Use telegramId parameter
 
-    if (user) {
-      // Create the new checklist object with the required date field
-      const newChecklist = {
-        weeklyGoal,
-        date: new Date(), // <-- ADD THIS LINE
-        tasks: checklistData.dailyTasks.map(task => ({
-          text: task.text,
-          completed: false,
-        })),
-      };
-
-      user.checklists.unshift(newChecklist);
-      await user.save();
-      return newChecklist;
-    } else {
-      console.error(`User with ID ${userId} not found.`);
-      return null;
+        if (user) {
+            // Check if a checklist with the same ID already exists to avoid duplicates
+            if (user.checklists.find(c => c.id === newChecklist.id)) {
+                console.warn(`Attempted to create duplicate checklist with ID ${newChecklist.id} for user ${telegramId}`);
+                return newChecklist;
+            }
+            
+            newChecklist.date = new Date(); // Add the missing date field
+            user.checklists.unshift(newChecklist);
+            await user.save();
+            return newChecklist;
+        } else {
+            console.error(`User with ID ${telegramId} not found.`);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error creating and saving checklist:', error);
+        throw error;
     }
-  } catch (error) {
-    console.error('Error creating and saving checklist:', error);
-    throw error;
-  }
 }
+
 /**
  * Retrieves a checklist by its date for a specific user.
  * @param {string} telegramId The user's Telegram ID.
@@ -229,20 +227,20 @@ async function getChecklistById(telegramId, checklistId) {
 }
 
 /**
- * Updates the user's streak and last checkin date, then returns a summary message.
+ * Updates the user's streak and last checkin date, then returns the updated user object.
  * @param {User} user The user document.
  * @param {string} checklistId The ID of the checklist being submitted.
- * @returns {string} A summary message.
+ * @returns {Promise<User|null>} The updated user object or null if an error occurs.
  */
 async function submitCheckin(user, checklistId) {
     if (!user) {
-        return "Error: User not found.";
+        return null;
     }
 
     try {
         const checklist = user.checklists.find(c => c.id === checklistId);
         if (!checklist) {
-            return "Error: Checklist not found.";
+            return null;
         }
         
         // Use moment to check if it's the same day
@@ -250,27 +248,19 @@ async function submitCheckin(user, checklistId) {
         const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
 
         if (checklist.checkedIn || lastCheckinIsToday) {
-            return "You've already submitted your check-in for today!";
+            // Return the user without changes if they've already checked in
+            return user;
         }
-
-        const totalTasks = checklist.tasks.length;
-        const completedTasks = checklist.tasks.filter(t => t.completed).length;
 
         user.lastCheckinDate = new Date();
         user.streak += 1;
         checklist.checkedIn = true;
         await user.save();
 
-        const checkinSummary = `*✅ Daily Check-in Submitted!*
-
-Weekly Goal: ${checklist.weeklyGoal || "No goal set yet."}
-Today's Progress: ${completedTasks}/${totalTasks} tasks completed.
-Your current streak: ${user.streak} days.
-`;
-        return checkinSummary;
+        return user; // <-- FIXED: Return the updated user object
     } catch (error) {
         console.error("❌ Error submitting check-in:", error);
-        return "An error occurred while submitting your check-in.";
+        return null;
     }
 }
 
@@ -308,7 +298,7 @@ async function addRecentChat(user, chatText) {
  */
 async function addImportantMemory(user, memoryText) {
     if (!user) {
-        console.error("User object is null, cannot add memory.");
+        console.log("User object is null, cannot add memory.");
         return;
     }
 
@@ -325,9 +315,6 @@ async function addImportantMemory(user, memoryText) {
 
 module.exports = {
     getOrCreateUser,
-    // The line below was causing a ReferenceError because the function
-    // `createChecklist` was not defined in this file.
-    // createChecklist,
     createAndSaveChecklist,
     getChecklistByDate,
     handleDailyCheckinReset,
