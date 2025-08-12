@@ -29,6 +29,19 @@ async function handleCallbackQuery(bot, callbackQuery) {
 
     // Acknowledge the callback immediately to prevent a timeout.
     await bot.answerCallbackQuery(callbackId).catch(err => {
+
+        bot.on('callback_query', async (callbackQuery) => {
+  console.log("=== CALLBACK QUERY RECEIVED ===");
+  console.log(callbackQuery);
+
+  const chatId = callbackQuery.message.chat.id;
+  const data = callbackQuery.data;
+
+  if (data === "test_callback") {
+    await bot.sendMessage(chatId, "Callback works ✅");
+  }
+});
+
         console.error('❌ Failed to answer callback query immediately:', err);
     });
 
