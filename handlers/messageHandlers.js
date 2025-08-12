@@ -304,6 +304,21 @@ async function handleMessage(bot, msg) {
  * @param {object} callbackQuery - The callback query object from Telegram.
  */
 async function handleCallbackQuery(bot, callbackQuery) {
+
+    // TEST COMMAND TO CHECK CALLBACK QUERIES
+bot.onText(/\/testbutton/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, "Click a button below:", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Test Callback", callback_data: "test_callback" }
+        ]
+      ]
+    }
+  });
+});
+
     const chatId = callbackQuery.message.chat.id;
     const messageId = callbackQuery.message.message_id;
     const data = callbackQuery.data;
