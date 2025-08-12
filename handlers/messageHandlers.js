@@ -64,12 +64,14 @@ function createChecklistKeyboard(checklist) {
         return { inline_keyboard: [] };
     }
 
-    const taskButtons = checklist.tasks.map(task => {
+    const taskButtons = checklist.tasks.map((task, index) => { // <-- ADDED 'index' HERE
         const taskText = task.text || "Task";
         const buttonText = task.completed ? `✅ ${taskText}` : `⬜️ ${taskText}`;
+        
+        // --- FIX: Using the array index instead of the long UUID for the task.id
         return [{
             text: buttonText,
-            callback_data: `toggle_task|${checklist.id}|${task.id}`
+            callback_data: `toggle_task|${checklist.id}|${index}`
         }];
     });
 
@@ -319,8 +321,10 @@ async function handleCallbackQuery(bot, callbackQuery) {
             return sendTelegramMessage(bot, chatId, "Error: Could not retrieve or create user.");
         }
 
-        const [action, checklistId, taskId] = data.split('|');
+        // --- FIX: taskId is now a string representation of the index, not a UUID
+        const [action, checklistId, taskIndexStr] = data.split('|');
         let checklist = await getChecklistById(user.telegramId, checklistId);
+        const taskIndex = parseInt(taskIndexStr, 10); // <-- PARSE TO INTEGER
 
         if (!checklist) {
             console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
@@ -330,7 +334,8 @@ async function handleCallbackQuery(bot, callbackQuery) {
         
         switch (action) {
             case 'toggle_task':
-                const taskToToggle = checklist.tasks.find(t => t.id === taskId);
+                // --- FIX: Find the task by its array index instead of a UUID
+                const taskToToggle = checklist.tasks[taskIndex];
                 if (taskToToggle) {
                     taskToToggle.completed = !taskToToggle.completed;
                     await updateChecklist(user.telegramId, checklist);
