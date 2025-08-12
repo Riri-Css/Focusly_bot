@@ -1,3 +1,5 @@
+// server.js - Updated to fix EADDRINUSE error
+
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -16,8 +18,10 @@ const url = process.env.RENDER_EXTERNAL_URL;
 const port = process.env.PORT || 3000;
 
 // === Telegram Bot Setup (Webhook Mode Only) ===
+// We are removing the { webHook: { port } } option.
+// The Express app will handle all incoming traffic on the port,
+// so the bot library does not need to create its own server.
 const bot = new TelegramBot(process.env.BOT_TOKEN, {
-  webHook: { port },
   polling: false
 });
 
