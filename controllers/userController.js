@@ -64,40 +64,26 @@ async function getOrCreateUser(telegramId) {
 
 /**
  * Creates a new checklist for the user with unique IDs for the checklist and tasks.
- * @param {User} user The user document.
- * @param {string} weeklyGoal The weekly goal to set.
- * @param {Array} dailyTasks An array of tasks for the checklist.
- * @returns {Object} The newly created checklist.
+ * @param {string} telegramId The unique ID of the user on Telegram.
+ * @param {object} newChecklist The checklist object to be saved.
+ * @returns {Promise<Object|null>} The newly created checklist or null if an error occurs.
  */
-async function createChecklist(user, weeklyGoal, dailyTasks) {
-    if (!user) {
-        console.error("User object is null, cannot create checklist.");
-        return null;
-    }
-
+async function createAndSaveChecklist(telegramId, newChecklist) {
     try {
-        const newChecklistId = generateUniqueId();
-        const newTasks = dailyTasks.map(task => ({
-            id: generateUniqueId(),
-            text: task.text,
-            completed: false,
-        }));
+        const user = await User.findOne({ telegramId });
+        if (!user) {
+            console.error("User not found, cannot save checklist.");
+            return null;
+        }
 
-        const newChecklist = {
-            id: newChecklistId,
-            date: new Date(),
-            weeklyGoal: weeklyGoal,
-            tasks: newTasks,
-            checkedIn: false,
-        };
-
+        // Add the new checklist to the user's checklists array
         user.checklists.push(newChecklist);
         await user.save();
 
-        console.log(`New checklist created for user ${user.telegramId} with ID: ${newChecklistId}`);
+        console.log(`New checklist created for user ${telegramId} with ID: ${newChecklist.id}`);
         return newChecklist;
     } catch (error) {
-        console.error("❌ Error creating checklist:", error);
+        console.error("❌ Error creating and saving checklist:", error);
         return null;
     }
 }
@@ -189,6 +175,53 @@ async function toggleTaskCompletion(user, checklistId, taskId) {
 }
 
 /**
+ * Updates a checklist for a user.
+ * @param {string} telegramId The user's Telegram ID.
+ * @param {object} updatedChecklist The new checklist object.
+ * @returns {Promise<Object|null>} The updated checklist or null if an error occurs.
+ */
+async function updateChecklist(telegramId, updatedChecklist) {
+    try {
+        const user = await User.findOne({ telegramId });
+        if (!user) {
+            console.error("User not found, cannot update checklist.");
+            return null;
+        }
+        const checklistIndex = user.checklists.findIndex(c => c.id === updatedChecklist.id);
+        if (checklistIndex !== -1) {
+            user.checklists[checklistIndex] = updatedChecklist;
+            await user.save();
+            return user.checklists[checklistIndex];
+        } else {
+            console.error(`Checklist with ID ${updatedChecklist.id} not found for user ${telegramId}.`);
+            return null;
+        }
+    } catch (error) {
+        console.error("❌ Error updating checklist:", error);
+        return null;
+    }
+}
+
+/**
+ * Retrieves a checklist by its ID for a specific user.
+ * @param {string} telegramId The user's Telegram ID.
+ * @param {string} checklistId The ID of the checklist.
+ * @returns {Promise<Object|null>} The checklist object or null if not found.
+ */
+async function getChecklistById(telegramId, checklistId) {
+    try {
+        const user = await User.findOne({ telegramId });
+        if (!user) {
+            return null;
+        }
+        return user.checklists.find(c => c.id === checklistId);
+    } catch (error) {
+        console.error("❌ Error fetching checklist by ID:", error);
+        return null;
+    }
+}
+
+/**
  * Updates the user's streak and last checkin date, then returns a summary message.
  * @param {User} user The user document.
  * @param {string} checklistId The ID of the checklist being submitted.
@@ -210,7 +243,7 @@ async function submitCheckin(user, checklistId) {
         const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
 
         if (checklist.checkedIn || lastCheckinIsToday) {
-          return "You've already submitted your check-in for today!";
+            return "You've already submitted your check-in for today!";
         }
 
         const totalTasks = checklist.tasks.length;
@@ -240,25 +273,25 @@ Your current streak: ${user.streak} days.
  * @param {string} chatText The text of the chat message.
  */
 async function addRecentChat(user, chatText) {
-  if (!user) {
-    console.error("User object is null, cannot add chat.");
-    return;
-  }
-  
-  try {
-      // Ensure recentChats is an array before pushing
-      if (!user.recentChats) {
-        user.recentChats = [];
-      }
-      user.recentChats.push({ text: chatText, timestamp: new Date() });
-      // Keep only the last 10 messages to avoid the array growing too large.
-      if (user.recentChats.length > 10) {
-          user.recentChats.shift();
-      }
-      await user.save();
-  } catch (error) {
-      console.error("❌ Error adding recent chat:", error);
-  }
+    if (!user) {
+        console.error("User object is null, cannot add chat.");
+        return;
+    }
+    
+    try {
+        // Ensure recentChats is an array before pushing
+        if (!user.recentChats) {
+            user.recentChats = [];
+        }
+        user.recentChats.push({ text: chatText, timestamp: new Date() });
+        // Keep only the last 10 messages to avoid the array growing too large.
+        if (user.recentChats.length > 10) {
+            user.recentChats.shift();
+        }
+        await user.save();
+    } catch (error) {
+        console.error("❌ Error adding recent chat:", error);
+    }
 }
 
 /**
@@ -267,29 +300,32 @@ async function addRecentChat(user, chatText) {
  * @param {string} memoryText The text of the important memory.
  */
 async function addImportantMemory(user, memoryText) {
-  if (!user) {
-    console.error("User object is null, cannot add memory.");
-    return;
-  }
+    if (!user) {
+        console.error("User object is null, cannot add memory.");
+        return;
+    }
 
-  try {
-      if (!user.importantMemories) {
-        user.importantMemories = [];
-      }
-      user.importantMemories.push({ text: memoryText, timestamp: new Date() });
-      await user.save();
-  } catch (error) {
-      console.error("❌ Error adding important memory:", error);
-  }
+    try {
+        if (!user.importantMemories) {
+            user.importantMemories = [];
+        }
+        user.importantMemories.push({ text: memoryText, timestamp: new Date() });
+        await user.save();
+    } catch (error) {
+        console.error("❌ Error adding important memory:", error);
+    }
 }
 
 module.exports = {
     getOrCreateUser,
     createChecklist,
+    createAndSaveChecklist, // <-- Added this line
     getChecklistByDate,
     handleDailyCheckinReset,
     toggleTaskCompletion,
     submitCheckin,
     addRecentChat,
     addImportantMemory,
+    getChecklistById, // <-- Added this line
+    updateChecklist // <-- Added this line
 };
