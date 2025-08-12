@@ -12,12 +12,16 @@ const { scheduleCustomReminders } = require('./utils/reminderScheduler');
 const app = express();
 app.use(bodyParser.json());
 
-// === Telegram Bot Setup (Webhook Mode Only) ===
-const bot = new TelegramBot(process.env.BOT_TOKEN);
 const url = process.env.RENDER_EXTERNAL_URL;
 const port = process.env.PORT || 3000;
 
-// Set Webhook
+// === Telegram Bot Setup (Webhook Mode Only) ===
+const bot = new TelegramBot(process.env.BOT_TOKEN, {
+  webHook: { port },
+  polling: false
+});
+
+// Set Webhook (secure endpoint for Telegram)
 bot.setWebHook(`${url}/bot${process.env.BOT_TOKEN}`);
 
 // Webhook endpoint
