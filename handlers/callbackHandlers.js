@@ -37,6 +37,12 @@ async function handleCallbackQuery(bot, callbackQuery) {
   const chatId = callbackQuery.message.chat.id;
   const data = callbackQuery.data;
 
+  if (callbackQuery.data === 'test_callback') {
+  await sendTelegramMessage(bot, callbackQuery.message.chat.id, "Callback works ✅");
+  await bot.answerCallbackQuery(callbackQuery.id); // acknowledge callback
+  return;
+}
+
   if (data === "test_callback") {
     await bot.sendMessage(chatId, "Callback works ✅");
   }
