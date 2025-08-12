@@ -132,27 +132,23 @@ async function checkAIUsageAndGetModel(user, chatId, bot) {
  * @param {object} msg - The message object from Telegram.
  */
 async function handleMessage(bot, msg) {
-    // A robust check at the beginning to ensure 'msg' is valid and has a 'chat' property.
-    // This prevents the 'ReferenceError' in the catch block if the msg is malformed.
     if (!msg || !msg.from || !msg.from.id || !msg.chat || !msg.chat.id) {
         console.error("❌ Invalid message format or missing chatId received:", msg);
-        // We can't send a message back without a chatId, so we just return.
         return;
     }
 
-    // Now we can safely declare chatId. It is guaranteed to exist.
-    const userId = msg.from.id;
+    // CHANGE HERE: convert userId to telegramId string
+    const telegramId = msg.from.id.toString();
     const chatId = msg.chat.id;
     const userInput = msg.text?.trim();
 
-    // Use a single try/catch block for the main logic.
     try {
         if (!userInput) {
             await sendTelegramMessage(bot, chatId, "Hmm, I didn’t catch that. Try sending it again.");
             return;
         }
 
-        let user = await getOrCreateUser(userId);
+        let user = await getOrCreateUser(telegramId);
         await handleDailyCheckinReset(user);
 
         const command = userInput.toLowerCase();
@@ -218,7 +214,7 @@ async function handleMessage(bot, msg) {
                         checkedIn: false,
                         createdAt: new Date().toISOString()
                     };
-                    await createAndSaveChecklist(userId, newChecklist);
+                    await createAndSaveChecklist(telegramId, newChecklist);
 
                     const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                     const keyboard = createChecklistKeyboard(newChecklist);
@@ -280,7 +276,7 @@ async function handleMessage(bot, msg) {
                     checkedIn: false,
                     createdAt: new Date().toISOString()
                 };
-                await createAndSaveChecklist(userId, newChecklist);
+                await createAndSaveChecklist(telegramId, newChecklist);
 
                 const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
@@ -297,7 +293,6 @@ async function handleMessage(bot, msg) {
         }
         
     } catch (error) {
-        // Now that chatId is guaranteed to exist, we can safely use it here.
         console.error("❌ Error handling message:", error);
         await sendTelegramMessage(bot, chatId, "Something went wrong while processing your message. Please try again.");
     }
@@ -316,15 +311,16 @@ async function handleCallbackQuery(bot, callbackQuery) {
     await bot.answerCallbackQuery(callbackQuery.id);
 
     try {
-        const user = await getOrCreateUser(chatId);
+        // CHANGE HERE: Use chatId as telegramId string
+        const telegramId = chatId.toString();
+        const user = await getOrCreateUser(telegramId);
         if (!user) {
             return sendTelegramMessage(bot, chatId, "Error: Could not retrieve or create user.");
         }
 
-        // --- FIX: taskId is now a string representation of the index, not a UUID
         const [action, checklistId, taskIndexStr] = data.split('|');
         let checklist = await getChecklistById(user.telegramId, checklistId);
-        const taskIndex = parseInt(taskIndexStr, 10); // <-- PARSE TO INTEGER
+        const taskIndex = parseInt(taskIndexStr, 10);
 
         if (!checklist) {
             console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
@@ -334,7 +330,6 @@ async function handleCallbackQuery(bot, callbackQuery) {
         
         switch (action) {
             case 'toggle_task':
-                // --- FIX: Find the task by its array index instead of a UUID
                 const taskToToggle = checklist.tasks[taskIndex];
                 if (taskToToggle) {
                     taskToToggle.completed = !taskToToggle.completed;
