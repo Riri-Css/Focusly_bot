@@ -1,5 +1,5 @@
 // File: src/utils/getSmartResponse.js - UPDATED
-const openai = require('../config/openai'); // Assuming you have this path
+const openai = require('../openai'); // Assuming you have this path
 const { getModelForUser } = require('../utils/subscriptionUtils');
 
 async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', strictMode = false) {
