@@ -2,14 +2,14 @@
 
 const moment = require('moment-timezone');
 const User = require('../models/user');
-const { Configuration, OpenAIApi } = require('openai');
+// New way to import and initialize OpenAI
+const OpenAI = require('openai');
 
 const TIMEZONE = 'Africa/Lagos';
 
-const configuration = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
 });
-const openai = new OpenAIApi(configuration);
 
 const PLAN_DETAILS = {
     'free': {
