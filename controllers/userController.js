@@ -1,19 +1,12 @@
-// File: src/controllers/userController.js
+// File: src/controllers/userController.js - CORRECTED VERSION
 // This file contains the logic for handling user messages and interacting with the database.
 // This version is cleaned up to correctly handle daily resets and work in tandem with messageHandlers.
 
 const User = require('../models/user');
 const moment = require('moment-timezone');
+const mongoose = require('mongoose');
 
 const TIMEZONE = 'Africa/Lagos';
-
-/**
- * Generates a simple unique ID string using the current timestamp and a random number.
- * @returns {string} A unique ID.
- */
-function generateUniqueId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
 
 /**
  * Retrieves a user from the database or creates a new one if they don't exist.
@@ -65,21 +58,32 @@ async function getOrCreateUser(telegramId) {
 /**
  * Creates and saves a new checklist for a user.
  * @param {string} telegramId The unique ID of the user on Telegram.
- * @param {object} newChecklist The checklist object to be saved.
+ * @param {object} aiResponse The AI response object containing the checklist data.
  * @returns {Promise<Object|null>} The newly created checklist or null if an error occurs.
  */
-async function createAndSaveChecklist(telegramId, newChecklist) {
+async function createAndSaveChecklist(telegramId, aiResponse) {
     try {
-        const user = await User.findOne({ telegramId }); // <-- FIXED: Use telegramId parameter
+        const user = await User.findOne({ telegramId });
 
         if (user) {
-            // Check if a checklist with the same ID already exists to avoid duplicates
-            if (user.checklists.find(c => c.id === newChecklist.id)) {
-                console.warn(`Attempted to create duplicate checklist with ID ${newChecklist.id} for user ${telegramId}`);
-                return newChecklist;
-            }
+            const newChecklist = {
+                _id: new mongoose.Types.ObjectId(), // <-- FIXED: Use _id for consistency
+                weeklyGoal: aiResponse.weekly_goal || user.goalMemory.text,
+                tasks: aiResponse.daily_tasks.map(task => ({
+                    ...task,
+                    _id: new mongoose.Types.ObjectId(), // <-- FIXED: Use _id for consistency
+                    completed: false
+                })),
+                checkedIn: false,
+                date: moment().tz(TIMEZONE).startOf('day').toDate() // Use start of day for consistent comparison
+            };
             
-            newChecklist.date = new Date(); // Add the missing date field
+            // Check if a checklist for today already exists to avoid duplicates
+            if (user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(newChecklist.date, 'day'))) {
+                console.warn(`Attempted to create duplicate checklist for user ${telegramId} on ${newChecklist.date}`);
+                return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(newChecklist.date, 'day'));
+            }
+
             user.checklists.unshift(newChecklist);
             await user.save();
             return newChecklist;
@@ -96,16 +100,16 @@ async function createAndSaveChecklist(telegramId, newChecklist) {
 /**
  * Retrieves a checklist by its date for a specific user.
  * @param {string} telegramId The user's Telegram ID.
- * @param {string} dateString The date in 'YYYY-MM-DD' format.
+ * @param {Date} dateObj The date object to search for.
  * @returns {Promise<Object|null>} The checklist object or null if not found.
  */
-async function getChecklistByDate(telegramId, dateString) {
+async function getChecklistByDate(telegramId, dateObj) {
     try {
         const user = await User.findOne({ telegramId });
         if (!user) {
             return null;
         }
-        const targetDate = moment.tz(dateString, TIMEZONE).startOf('day').toDate();
+        const targetDate = moment(dateObj).tz(TIMEZONE).startOf('day').toDate();
         return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(targetDate, 'day'));
     } catch (error) {
         console.error("❌ Error fetching checklist by date:", error);
@@ -126,12 +130,13 @@ async function handleDailyCheckinReset(user) {
     
     try {
         const now = moment().tz(TIMEZONE);
-        const todayStart = now.startOf('day');
+        const todayStart = now.clone().startOf('day');
 
-        // If the user has not checked in today
+        // Check if the last check-in was not today
         if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(todayStart, 'day')) {
             const yesterdayStart = todayStart.clone().subtract(1, 'day');
-            // If they did not check in yesterday, reset streak
+            
+            // If they did not check in yesterday either, reset streak
             if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(yesterdayStart, 'day')) {
                 if (user.streak > 0) {
                     console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
@@ -142,40 +147,6 @@ async function handleDailyCheckinReset(user) {
         await user.save();
     } catch (error) {
         console.error("❌ Error handling daily check-in reset:", error);
-    }
-}
-
-/**
- * Toggles the completion status of a task in a user's checklist.
- * @param {User} user The user document.
- * @param {string} checklistId The ID of the checklist.
- * @param {string} taskId The ID of the task to toggle.
- * @returns {Object|null} The updated checklist or null if not found.
- */
-async function toggleTaskCompletion(user, checklistId, taskId) {
-    if (!user) {
-        return null;
-    }
-
-    try {
-        const checklist = user.checklists.find(c => c.id === checklistId);
-        if (!checklist) {
-            console.error(`Checklist not found with ID: ${checklistId}`);
-            return null;
-        }
-
-        const task = checklist.tasks.find(t => t.id === taskId);
-        if (!task) {
-            console.error(`Task not found with ID: ${taskId} in checklist ${checklistId}`);
-            return null;
-        }
-
-        task.completed = !task.completed;
-        await user.save();
-        return checklist;
-    } catch (error) {
-        console.error("❌ Error toggling task completion:", error);
-        return null;
     }
 }
 
@@ -192,13 +163,13 @@ async function updateChecklist(telegramId, updatedChecklist) {
             console.error("User not found, cannot update checklist.");
             return null;
         }
-        const checklistIndex = user.checklists.findIndex(c => c.id === updatedChecklist.id);
+        const checklistIndex = user.checklists.findIndex(c => c._id.toString() === updatedChecklist._id.toString());
         if (checklistIndex !== -1) {
             user.checklists[checklistIndex] = updatedChecklist;
             await user.save();
             return user.checklists[checklistIndex];
         } else {
-            console.error(`Checklist with ID ${updatedChecklist.id} not found for user ${telegramId}.`);
+            console.error(`Checklist with ID ${updatedChecklist._id} not found for user ${telegramId}.`);
             return null;
         }
     } catch (error) {
@@ -219,12 +190,46 @@ async function getChecklistById(telegramId, checklistId) {
         if (!user) {
             return null;
         }
-        return user.checklists.find(c => c.id === checklistId);
+        return user.checklists.find(c => c._id.toString() === checklistId);
     } catch (error) {
         console.error("❌ Error fetching checklist by ID:", error);
         return null;
     }
 }
+
+/**
+ * Toggles the completion status of a task in a user's checklist.
+ * @param {User} user The user document.
+ * @param {string} checklistId The ID of the checklist.
+ * @param {number} taskIndex The index of the task to toggle.
+ * @returns {Object|null} The updated checklist or null if not found.
+ */
+async function toggleTaskCompletion(user, checklistId, taskIndex) {
+    if (!user) {
+        return null;
+    }
+
+    try {
+        const checklist = user.checklists.find(c => c._id.toString() === checklistId);
+        if (!checklist) {
+            console.error(`Checklist not found with ID: ${checklistId}`);
+            return null;
+        }
+
+        if (checklist.tasks[taskIndex]) {
+            checklist.tasks[taskIndex].completed = !checklist.tasks[taskIndex].completed;
+            await user.save();
+            return checklist;
+        } else {
+            console.error(`Task index ${taskIndex} not found in checklist ${checklistId}`);
+            return null;
+        }
+    } catch (error) {
+        console.error("❌ Error toggling task completion:", error);
+        return null;
+    }
+}
+
 
 /**
  * Updates the user's streak and last checkin date, then returns the updated user object.
@@ -238,7 +243,7 @@ async function submitCheckin(user, checklistId) {
     }
 
     try {
-        const checklist = user.checklists.find(c => c.id === checklistId);
+        const checklist = user.checklists.find(c => c._id.toString() === checklistId);
         if (!checklist) {
             return null;
         }
@@ -253,11 +258,11 @@ async function submitCheckin(user, checklistId) {
         }
 
         user.lastCheckinDate = new Date();
-        user.streak += 1;
+        user.streak = (user.streak || 0) + 1;
         checklist.checkedIn = true;
         await user.save();
 
-        return user; // <-- FIXED: Return the updated user object
+        return user;
     } catch (error) {
         console.error("❌ Error submitting check-in:", error);
         return null;
