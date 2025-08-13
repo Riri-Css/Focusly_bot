@@ -1,101 +1,115 @@
-// File: src/utils/subscriptionUtils.js
-const moment = require('moment');
+// File: src/utils/subscriptionUtils.js - FINAL CORRECTED VERSION
 
-// --- NEW CODE: Centralized plan details ---
-function getPlanDetails(plan) {
-    const plans = {
-        'basic': {
-            name: 'Basic',
-            price: 1000,   // price in Naira
-            priceInKobo: 1000 * 100 // price for Paystack
-        },
-        'premium': {
-            name: 'Premium',
-            price: 1500,   // price in Naira
-            priceInKobo: 1500 * 100 // price for Paystack
-        }
-    };
-    return plans[plan] || null;
-}
-// --- END NEW CODE ---
+const moment = require('moment-timezone');
+const User = require('../models/user');
+const { Configuration, OpenAIApi } = require('openai');
 
-function isTrialExpired(user) {
-  if (!user.trialStartDate) return true;
-  const daysSinceTrial = moment().diff(moment(user.trialStartDate), 'days');
-  return daysSinceTrial > 13;
-}
+const TIMEZONE = 'Africa/Lagos';
 
-function hasActiveSubscription(user) {
-  if (!user.subscription || !user.subscription.status) return false;
-  return user.subscription.status === 'active' &&
-    (!user.subscription.expiresAt || moment().isBefore(user.subscription.expiresAt));
-}
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
 
-function getUserPlan(user) {
-  if (hasActiveSubscription(user)) {
-    return user.subscription.plan; // 'basic' or 'premium'
-  }
-  return isTrialExpired(user) ? 'none' : 'trial';
-}
-
-function canAccessAI(user, feature = 'general') {
-  const plan = getUserPlan(user);
-  
-  if (plan === 'premium') return true;
-
-  if (user.lastUsageUpdate) {
-    const lastUpdateMoment = moment(user.lastUsageUpdate);
-    
-    if (!moment().isSame(lastUpdateMoment, 'day')) {
-      user.dailyAIUses = 0;
+const PLAN_DETAILS = {
+    'free': {
+        price: 0,
+        aiUsageLimit: { general: 3, checklist: 1 },
+        model: 'gpt-3.5-turbo'
+    },
+    'basic': {
+        price: 100000, // ₦1,000 in kobo
+        aiUsageLimit: { general: 30, checklist: 30 },
+        model: 'gpt-3.5-turbo'
+    },
+    'premium': {
+        price: 150000, // ₦1,500 in kobo
+        aiUsageLimit: null, // Unlimited
+        model: 'gpt-4'
     }
-    
-    if (!moment().isSame(lastUpdateMoment, 'week')) {
-      user.weeklyAIUses = 0;
-    }
-  }
+};
 
-  if (plan === 'basic') {
-    if (feature === 'checklist') return (user.weeklyAIUses || 0) < 10;
+/**
+ * Retrieves the details for a given plan.
+ * @param {string} planName - The name of the plan ('free', 'basic', 'premium').
+ * @returns {object} The plan details.
+ */
+function getPlanDetails(planName) {
+    return PLAN_DETAILS[planName] || PLAN_DETAILS.free;
+}
+
+/**
+ * Checks if a user has AI usage access based on their plan and limits.
+ * @param {object} user - The user object.
+ * @param {string} type - The type of usage ('general' or 'checklist').
+ * @returns {Promise<boolean>} True if the user has access, false otherwise.
+ */
+async function hasAIUsageAccess(user, type = 'general') {
+    if (user.subscriptionPlan === 'premium') {
+        return true; // Premium users have unlimited access
+    }
+
+    const planLimits = getPlanDetails(user.subscriptionPlan).aiUsageLimit;
+    if (!planLimits) {
+        return false;
+    }
+    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+
+    let usage = user.aiUsage.find(u => moment(u.date).isSame(today, 'day'));
+    if (!usage) {
+        usage = { date: today, generalCount: 0, checklistCount: 0 };
+        user.aiUsage.push(usage);
+    }
+
+    if (type === 'general') {
+        return usage.generalCount < planLimits.general;
+    } else if (type === 'checklist') {
+        return usage.checklistCount < planLimits.checklist;
+    }
+
     return false;
-  }
-  
-  if (plan === 'trial') {
-    return (user.dailyAIUses || 0) < 5;
-  }
-  
-  return false;
 }
 
-function incrementAIUsage(user, feature = 'general') {
-  const plan = getUserPlan(user);
-  user.lastUsageUpdate = new Date();
+/**
+ * Tracks AI usage for a user.
+ * @param {object} user - The user object.
+ * @param {string} type - The type of usage ('general' or 'checklist').
+ */
+async function trackAIUsage(user, type) {
+    if (user.subscriptionPlan === 'premium') {
+        return; // Premium users don't have usage tracked
+    }
+    
+    const today = moment().tz(TIMEZONE).startOf('day').toDate();
 
-  if (plan === 'basic' && feature === 'checklist') {
-    user.weeklyAIUses = (user.weeklyAIUses || 0) + 1;
-  } else if (plan === 'trial') {
-    user.dailyAIUses = (user.dailyAIUses || 0) + 1;
-  }
-  return user.save();
+    let usage = user.aiUsage.find(u => moment(u.date).isSame(today, 'day'));
+    if (!usage) {
+        usage = { date: today, generalCount: 0, checklistCount: 0 };
+        user.aiUsage.push(usage);
+    }
+
+    if (type === 'general') {
+        usage.generalCount++;
+    } else if (type === 'checklist') {
+        usage.checklistCount++;
+    }
+
+    await user.save();
 }
 
-function getAIModel(user) {
-  const plan = getUserPlan(user);
-  if (plan === 'premium') return 'gpt-4o';
-  if (plan === 'basic') return 'gpt-3.5-turbo';
-  if (plan === 'trial') return 'gpt-4o';
-  return null;
+/**
+ * Determines the appropriate OpenAI model for a user based on their subscription.
+ * @param {object} user - The user object.
+ * @returns {string} The model name.
+ */
+function getModelForUser(user) {
+    return getPlanDetails(user.subscriptionPlan).model;
 }
+
 
 module.exports = {
-  hasAIUsageAccess: canAccessAI,
-  trackAIUsage: incrementAIUsage,
-  getModelForUser: getAIModel,
-  recordAIUsage: incrementAIUsage,
-  isTrialExpired,
-  hasActiveSubscription,
-  getUserPlan,
-  checkAIEligibility: canAccessAI,
-  getUserPlan,
-  getPlanDetails // <-- NEW: Export the centralized function
+    getPlanDetails,
+    hasAIUsageAccess,
+    trackAIUsage,
+    getModelForUser,
 };
