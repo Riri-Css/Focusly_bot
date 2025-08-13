@@ -1,5 +1,5 @@
-// File: src/utils/getSmartResponse.js - UPDATED
-const openai = require('./openai'); // Assuming you have this path
+// File: src/utils/getSmartResponse.js - CORRECT VERSION
+const openai = require('./openai');
 const { getModelForUser } = require('../utils/subscriptionUtils');
 
 async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', strictMode = false) {
@@ -12,7 +12,6 @@ async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', s
 
         let systemPromptContent, userInput;
         
-        // This is a much safer way to handle the prompt content
         const goal = user.goalMemory?.text || 'No specific goal provided';
         const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
         const importantMemory = user.importantMemory?.map(mem => `Long-Term Note: ${mem.text}`).join('\n') || '';
@@ -39,7 +38,6 @@ ${recent}"`;
 
         switch (promptType) {
             case 'create_checklist':
-                // Check if goal is valid before creating the prompt
                 const currentGoal = data.goalMemory?.text || "a generic goal";
                 userInput = `Please generate a new daily checklist based on this weekly goal: "${currentGoal}".`;
                 systemPromptContent = systemPromptHeader + `\n\n` +
@@ -48,19 +46,27 @@ ${recent}"`;
                 break;
             
             case 'set_goal':
-                userInput = userInput; // The user's input is the new goal
+                userInput = data.userInput; // ✅ CORRECTED
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for setting goals:\n` +
-                    `{ "intent": "create_checklist", "challenge_message": "optional sassy message", "weekly_goal": "A concise, specific weekly goal.", "daily_tasks": [ {"text": "Daily task 1"}, ... ] }`
+                    `{ "intent": "create_checklist", "challenge_message": "optional sassy message", "weekly_goal": "A concise, specific weekly goal.", "daily_tasks": [ {"text": "Daily task 1"}, ... ] }`;
                 break;
 
             case 'general_chat':
             default:
-                userInput = userInput; // The user's input is the general message
+                userInput = data.userInput; // ✅ CORRECTED
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for general conversations:\n` +
-                    `{ "intent": "general", "message": "A short, direct message." }`
+                    `{ "intent": "general", "message": "A short, direct message." }`;
                 break;
+        }
+
+        if (!userInput || typeof userInput !== 'string') {
+            console.error('Fatal: userInput is not a valid string. Got:', userInput);
+            return {
+                message: "Sorry, I couldn't process your request. Please try again.",
+                intent: 'error',
+            };
         }
 
         const completion = await openai.chat.completions.create({
@@ -69,7 +75,6 @@ ${recent}"`;
             messages: [{ role: 'system', content: systemPromptContent }, { role: 'user', content: userInput }],
         });
 
-        // The rest of the function for parsing and returning the response...
         const raw = completion.choices[0].message.content.trim();
         let structured;
         try {
