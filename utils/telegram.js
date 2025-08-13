@@ -1,12 +1,13 @@
-// File: src/utils/telegram.js - CORRECTED VERSION
+// File: src/utils/telegram.js
 const moment = require('moment-timezone');
-const { getPlanDetails } = require('./subscriptionUtils'); // <-- NEW: Import the utility
+const { getPlanDetails } = require('./subscriptionUtils');
+const { sendTelegramMessage } = require('../handlers/messageHandlers'); // <-- NEW: Import sendTelegramMessage
 
 /**
- * Creates the inline keyboard for subscription options with JSON callback data.
- * @param {boolean} isPremium - True if the user is already premium.
- * @returns {Array<Array<object>>} The inline keyboard.
- */
+ * Creates the inline keyboard for subscription options with JSON callback data.
+ * @param {boolean} isPremium - True if the user is already premium.
+ * @returns {Array<Array<object>>} The inline keyboard.
+ */
 function getSubscriptionOptions(isPremium) {
     const basicPlan = getPlanDetails('basic');
     const premiumPlan = getPlanDetails('premium');
@@ -33,4 +34,25 @@ function getSubscriptionOptions(isPremium) {
         ];
     }
 }
-// ... (rest of the file remains the same)
+
+/**
+ * Sends the subscription options message to the user.
+ * @param {object} bot - The Telegram bot instance.
+ * @param {number} chatId - The ID of the chat.
+ * @param {boolean} isPremium - True if the user is already premium.
+ */
+async function sendSubscriptionOptions(bot, chatId, isPremium) {
+    const options = {
+        reply_markup: {
+            inline_keyboard: getSubscriptionOptions(isPremium)
+        },
+        parse_mode: 'Markdown'
+    };
+    await sendTelegramMessage(bot, chatId, "Choose a plan to upgrade your GoalBot experience:", options);
+}
+
+
+module.exports = {
+    getSubscriptionOptions,
+    sendSubscriptionOptions
+};
