@@ -9,8 +9,8 @@ const {
     createAndSaveChecklist
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
-const { getSmartResponse } = require('../utils/getSmartResponse');
 const { sendSubscriptionOptions } = require('../utils/telegram');
+const { getSmartResponse } = require('../utils/getSmartResponse');
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
@@ -111,7 +111,7 @@ async function checkAIUsageAndGetModel(user, chatId, bot) {
         await sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
         return null;
     }
-    const model = await getModelForUser(user);
+    const model = getModelForUser(user);
     if (!model) {
         await sendTelegramMessage(bot, chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
         return null;
@@ -179,7 +179,7 @@ async function handleMessage(bot, msg) {
             if (isActive) {
                 await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
             } else {
-                await sendSubscriptionOptions(bot, chatId, isPremium);
+                await sendSubscriptionOptions(bot, chatId, isPremium, sendTelegramMessage); // <-- CORRECTED CALL
             }
             return;
         }
@@ -288,5 +288,5 @@ module.exports = {
     createChecklistMessage,
     createChecklistKeyboard,
     createFinalCheckinMessage,
-    sendTelegramMessage
+    sendTelegramMessage // <-- EXPORTED
 };

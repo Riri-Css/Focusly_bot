@@ -1,9 +1,8 @@
 // File: src/handlers/callbackHandlers.js - FINAL CORRECTED VERSION
-
 const User = require('../models/user');
 const {
+    toggleTaskCompletion,
     getChecklistById,
-    updateChecklist,
     submitCheckin,
     getOrCreateUser,
 } = require('../controllers/userController');
@@ -11,7 +10,7 @@ const {
     createChecklistKeyboard,
     createChecklistMessage,
     createFinalCheckinMessage,
-    sendTelegramMessage,
+    sendTelegramMessage, // <-- CORRECTED IMPORT
 } = require('./messageHandlers');
 const { generatePaystackLink } = require('../utils/paystackUtils');
 const { getPlanDetails } = require('../utils/subscriptionUtils');
@@ -50,7 +49,6 @@ async function handleCallbackQuery(bot, callbackQuery) {
                     return sendTelegramMessage(bot, chatId, `Sorry, the details for the ${plan} plan are not available.`);
                 }
                 
-                // Paystack amounts are in kobo. Convert to Naira for display
                 const amountInNaira = planDetails.price / 100;
                 
                 const paymentUrl = await generatePaystackLink(user, planDetails.price, plan);
@@ -68,7 +66,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 } else {
                     await sendTelegramMessage(bot, chatId, 'An error occurred while preparing your payment link. Please try again.');
                 }
-                return; // Exit after handling subscription
+                return;
             }
         } catch (e) {
             // This is expected for non-JSON callbacks, so we continue.
@@ -94,7 +92,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         }
 
         switch (action) {
-            case 'toggle': // Use 'toggle' to match the keyboard data
+            case 'toggle':
                 if (taskIndex === null || isNaN(taskIndex)) {
                     await sendTelegramMessage(bot, chatId, 'Invalid task index.');
                     return;
@@ -121,7 +119,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 }
                 break;
 
-            case 'submit': // Use 'submit' to match the keyboard data
+            case 'submit':
                 if (checklist.checkedIn) {
                     await sendTelegramMessage(bot, chatId, 'You have already submitted this check-in.');
                     return;

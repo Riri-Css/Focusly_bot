@@ -1,7 +1,6 @@
 // File: src/utils/telegram.js - FINAL CORRECTED VERSION
 const moment = require('moment-timezone');
 const { getPlanDetails } = require('./subscriptionUtils');
-const { sendTelegramMessage } = require('../handlers/messageHandlers');
 
 /**
  * Creates the inline keyboard for subscription options with JSON callback data.
@@ -20,11 +19,11 @@ function getSubscriptionOptions(isPremium) {
     } else {
         return [
             [{
-                text: `✨ Premium (₦${premiumPlan.price}/month)`,
+                text: `✨ Premium (₦${premiumPlan.price / 100}/month)`,
                 callback_data: JSON.stringify({ action: 'subscribe', plan: 'premium' })
             }],
             [{
-                text: `💰 Basic (₦${basicPlan.price}/month)`,
+                text: `💰 Basic (₦${basicPlan.price / 100}/month)`,
                 callback_data: JSON.stringify({ action: 'subscribe', plan: 'basic' })
             }],
             [{
@@ -40,8 +39,9 @@ function getSubscriptionOptions(isPremium) {
  * @param {object} bot - The Telegram bot instance.
  * @param {number} chatId - The ID of the chat.
  * @param {boolean} isPremium - True if the user is already premium.
+ * @param {function} sendTelegramMessage - The function to send a message.
  */
-async function sendSubscriptionOptions(bot, chatId, isPremium) {
+async function sendSubscriptionOptions(bot, chatId, isPremium, sendTelegramMessage) {
     const options = {
         reply_markup: {
             inline_keyboard: getSubscriptionOptions(isPremium)
