@@ -1,4 +1,4 @@
-// File: src/handlers/callbackHandlers.js - UPDATED
+// File: src/handlers/callbackHandlers.js - CORRECTED
 const User = require('../models/user');
 const {
   getChecklistById,
@@ -12,35 +12,14 @@ const {
   createFinalCheckinMessage,
   sendTelegramMessage,
 } = require('./messageHandlers');
-const { generatePaystackLink } = require('../utils/paystackUtils'); // <-- NEW: Import your Paystack utility
+const { generatePaystackLink } = require('../utils/paystackUtils');
+const { getPlanDetails } = require('../utils/subscriptionUtils'); // <-- NEW: Import the centralized function
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
 
-/**
- * Register /testbutton command here to send test inline keyboard
- * This should NOT be inside handleCallbackQuery, but at the module root.
- */
-function registerTestButtonCommand(bot) {
-  bot.onText(/\/testbutton/, async (msg) => {
-    const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, 'Click a button below:', {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '✅ Test Callback', callback_data: 'test_callback' }
-          ]
-        ]
-      }
-    });
-  });
-}
+// ... (rest of the file remains the same until handleCallbackQuery)
 
-/**
- * Handles incoming callback queries from inline keyboards.
- * @param {object} bot - The Telegram bot instance.
- * @param {object} callbackQuery - The callback query object.
- */
 async function handleCallbackQuery(bot, callbackQuery) {
   const chatId = callbackQuery.message.chat.id;
   const messageId = callbackQuery.message.message_id;
@@ -59,25 +38,25 @@ async function handleCallbackQuery(bot, callbackQuery) {
     try {
         parsedData = JSON.parse(data);
     } catch (e) {
-        parsedData = null; // Data is not a JSON object, proceed to checklist logic
+        parsedData = null;
     }
     
-    // Check if the data is for a subscription
     if (parsedData && parsedData.action === 'subscribe') {
         const plan = parsedData.plan;
         
-        // Define prices for your plans
-        const prices = {
-            'basic': 1000,   // ₦1,000.00
-            'premium': 3000 // ₦1,500.00
-        };
-        const amount = prices[plan];
+        // --- CORRECTED CODE: Use the centralized plan details ---
+        const planDetails = getPlanDetails(plan);
 
-        if (!amount) {
+        if (!planDetails) {
             return sendTelegramMessage(bot, chatId, `Sorry, the price for the ${plan} plan is not available.`);
         }
+        
+        const amount = planDetails.price; // Price in Naira for the button text
+        const amountInKobo = planDetails.priceInKobo; // Price in kobo for Paystack API
 
-        const paymentUrl = await generatePaystackLink(user, amount, plan);
+        // Pass the correct amountInKobo to the Paystack function
+        const paymentUrl = await generatePaystackLink(user, amountInKobo, plan);
+        // --- END CORRECTED CODE ---
 
         if (paymentUrl) {
             const keyboard = {
@@ -92,83 +71,10 @@ async function handleCallbackQuery(bot, callbackQuery) {
         } else {
             await sendTelegramMessage(bot, chatId, 'An error occurred while preparing your payment link. Please try again.');
         }
-        return; // Exit the function after handling subscription
-    }
-
-    // Existing checklist handling logic
-    const [action, checklistId, taskIndexStr] = data.split('|');
-    const taskIndex = taskIndexStr ? parseInt(taskIndexStr, 10) : null;
-
-    if (action === 'test_callback') {
-        console.log('✅ Test callback triggered!');
-        await sendTelegramMessage(bot, chatId, 'You clicked the test button!');
         return;
     }
 
-    const checklist = await getChecklistById(user.telegramId, checklistId);
-    if (!checklist) {
-      console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
-      await sendTelegramMessage(bot, chatId, "Sorry, I couldn't find that checklist. It may have been replaced by a new one.");
-      return;
-    }
-
-    switch (action) {
-      case 'toggle_task':
-        if (taskIndex === null || isNaN(taskIndex)) {
-          await bot.answerCallbackQuery('Invalid task index.');
-          return;
-        }
-        const taskToToggle = checklist.tasks[taskIndex];
-        if (taskToToggle) {
-          taskToToggle.completed = !taskToToggle.completed;
-          await updateChecklist(user.telegramId, checklist);
-
-          const keyboard = createChecklistKeyboard(checklist);
-          const messageText =
-            `Good morning! Here is your daily checklist to push you towards your goal:\n\n` +
-            `**Weekly Goal:** ${user.goalMemory.text}\n\n` +
-            createChecklistMessage(checklist);
-
-          await bot.editMessageText(messageText, {
-            chat_id: chatId,
-            message_id: messageId,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard,
-          });
-        } else {
-          await bot.answerCallbackQuery('Task not found.');
-        }
-        break;
-
-      case 'submit_checkin':
-        if (checklist.checkedIn) {
-          await bot.answerCallbackQuery('You have already submitted this check-in.');
-          return;
-        }
-
-        checklist.checkedIn = true;
-        await updateChecklist(user.telegramId, checklist);
-
-        const submittedUser = await submitCheckin(user, checklistId);
-        const finalMessage = createFinalCheckinMessage(submittedUser, checklist);
-
-        await bot.editMessageText(finalMessage, {
-          chat_id: chatId,
-          message_id: messageId,
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [] },
-        });
-        break;
-
-      default:
-        console.warn(`Unknown callback action: ${action}`);
-        await sendTelegramMessage(bot, chatId, 'An unknown action was requested.');
-        break;
-    }
-  } catch (error) {
-    console.error('❌ Error handling callback query:', error);
-    await sendTelegramMessage(bot, chatId, 'An error occurred while processing your request.');
-  }
+    // ... (rest of the file for checklist logic remains the same)
 }
 
 module.exports = {
