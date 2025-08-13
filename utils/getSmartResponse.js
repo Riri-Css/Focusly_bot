@@ -1,4 +1,4 @@
-// File: src/utils/getSmartResponse.js - CORRECT VERSION
+// File: src/utils/getSmartResponse.js - FULL UPDATED
 const openai = require('./openai');
 const { getModelForUser } = require('../utils/subscriptionUtils');
 
@@ -11,7 +11,7 @@ async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', s
         }
 
         let systemPromptContent, userInput;
-        
+
         const goal = user.goalMemory?.text || 'No specific goal provided';
         const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
         const importantMemory = user.importantMemory?.map(mem => `Long-Term Note: ${mem.text}`).join('\n') || '';
@@ -23,13 +23,12 @@ Your responses must be structured as a JSON object with a specific 'intent' and 
 
 **RULES:**
 - **Goal Setting:** When a user sets a new goal, you must evaluate the timeline.
-    - If the timeline is unrealistic (e.g., 'make ₦2M in 2 weeks'), respond with a direct, sassy message challenging them to be realistic. Then, propose a more achievable goal or timeline.
-    - If the timeline is too long (e.g., 'save ₦50K in 6 months earning ₦300K/weekly'), point this out and suggest a more efficient timeline.
+    - If the timeline is unrealistic, respond with a direct, sassy message challenging them.
     - After a reasonable goal and timeline are established, break it down into a weekly goal and 3-5 concrete, actionable daily tasks.
-- **Task Assistance:** If a user is confused or asks for help with a task (e.g., "how do I market on LinkedIn?"), act as a specialized advisor. Give specific, actionable advice on content ideas, methods, etc.
-- **Accountability:** If a user misses 3 or more check-ins, activate "Strict Mode." Your tone becomes less forgiving and more demanding.
+- **Task Assistance:** Act as a specialized advisor. Give specific, actionable advice.
+- **Accountability:** If a user misses 3+ check-ins, activate "Strict Mode." Tone becomes less forgiving.
 - **General Conversation:** Keep non-goal-related conversations brief and to the point.
-- **Output Format:** ALWAYS respond in JSON. Do not include markdown or any other prose outside the JSON object.
+- **Output Format:** ALWAYS respond in JSON. Do not include markdown or other prose outside JSON.
 
 User's Goal: "${goal}"
 ${importantMemory ? '\nImportant Memories:\n' + importantMemory : ''}
@@ -44,9 +43,9 @@ ${recent}"`;
                     `Respond in this JSON format for checklists:\n` +
                     `{ "intent": "create_checklist", "weekly_goal": "A concise, specific weekly goal.", "daily_tasks": [ {"text": "Daily task 1"}, ... ] }`;
                 break;
-            
+
             case 'set_goal':
-                userInput = data.userInput; // ✅ CORRECTED
+                userInput = data.userInput || "No input provided"; // safe fallback
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for setting goals:\n` +
                     `{ "intent": "create_checklist", "challenge_message": "optional sassy message", "weekly_goal": "A concise, specific weekly goal.", "daily_tasks": [ {"text": "Daily task 1"}, ... ] }`;
@@ -54,29 +53,33 @@ ${recent}"`;
 
             case 'general_chat':
             default:
-                userInput = data.userInput; // ✅ CORRECTED
+                userInput = data.userInput || "Hello, let's talk goals!"; // safe fallback
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for general conversations:\n` +
-                    `{ "intent": "general", "message": "A short, direct message." }`;
+                    `{ "intent": "general", "message": "Provide a short, direct, sassy message." }`;
                 break;
         }
 
         if (!userInput || typeof userInput !== 'string') {
             console.error('Fatal: userInput is not a valid string. Got:', userInput);
             return {
-                message: "Sorry, I couldn't process your request. Please try again.",
-                intent: 'error',
+                message: "Listen, I don't care if you just sent a sticker or emoji—let's talk about your goals. What's the plan?",
+                intent: 'general',
             };
         }
 
         const completion = await openai.chat.completions.create({
             model: userModel,
             response_format: { "type": "json_object" },
-            messages: [{ role: 'system', content: systemPromptContent }, { role: 'user', content: userInput }],
+            messages: [
+                { role: 'system', content: systemPromptContent },
+                { role: 'user', content: userInput }
+            ],
         });
 
         const raw = completion.choices[0].message.content.trim();
         let structured;
+
         try {
             structured = JSON.parse(raw);
         } catch (err) {
@@ -88,21 +91,22 @@ ${recent}"`;
             } else {
                 console.error('Fatal: Fallback JSON extraction failed. Raw:', raw);
                 return {
-                    message: ["I'm sorry, an internal error occurred while generating a response."],
+                    message: "Listen, I don't care if you just sent a sticker or emoji—let's talk about your goals. What's the plan?",
                     intent: 'general',
                 };
             }
         }
-        
+
         const defaultResponse = {
             intent: 'general',
-            message: "I'm here to help you get your stuff done. What's the plan?",
+            message: "Listen, I don't care if it's just 'hi'—let's talk about your goals. What's the plan?",
             challenge_message: null,
             weekly_goal: null,
             daily_tasks: null
         };
+
         let response = { ...defaultResponse };
-        
+
         if (structured.intent === 'create_checklist') {
             response.intent = 'create_checklist';
             response.challenge_message = structured.challenge_message || null;
@@ -117,13 +121,13 @@ ${recent}"`;
             response.intent = structured.intent || 'general';
             response.message = structured.message || (Array.isArray(structured.messages) ? structured.messages.join('\n') : structured.messages) || response.message;
         }
-        
+
         return response;
 
     } catch (error) {
         console.error('OpenAI error:', error);
         return {
-            message: "Sorry, I'm currently unable to respond. Please try again later.",
+            message: "Listen, I'm currently unable to respond, but your goals won't wait. Try again in a moment.",
             intent: 'error',
         };
     }
