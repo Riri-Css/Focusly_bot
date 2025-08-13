@@ -163,7 +163,8 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         try {
             const users = await User.find({});
             for (const user of users) {
-                const checklist = await getChecklistByDate(user._id, today);
+                // <-- FIX: Pass the correct telegramId to the function -->
+                const checklist = await getChecklistByDate(user.telegramId, today); 
                 if (checklist && !checklist.checkedIn) {
                     user.currentStreak = 0;
                     user.missedCheckins = (user.missedCheckins || 0) + 1;
@@ -171,7 +172,8 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
                     console.log(`⚠️ User ${user.telegramId} missed check-in. Streak reset.`);
                 } else if (checklist && checklist.checkedIn) {
                     const yesterday = moment().tz(TIMEZONE).subtract(1, 'day').toDate();
-                    const yesterdayChecklist = await getChecklistByDate(user._id, yesterday);
+                    // <-- FIX: Pass the correct telegramId to the function -->
+                    const yesterdayChecklist = await getChecklistByDate(user.telegramId, yesterday);
                     if(yesterdayChecklist && yesterdayChecklist.checkedIn) {
                         user.currentStreak = (user.currentStreak || 0) + 1;
                         await user.save();
