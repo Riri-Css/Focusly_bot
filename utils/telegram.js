@@ -1,7 +1,7 @@
-// File: src/utils/telegram.js
+// File: src/utils/telegram.js - FINAL CORRECTED VERSION
 const moment = require('moment-timezone');
 const { getPlanDetails } = require('./subscriptionUtils');
-const { sendTelegramMessage } = require('../handlers/messageHandlers'); // <-- NEW: Import sendTelegramMessage
+const { sendTelegramMessage } = require('../handlers/messageHandlers');
 
 /**
  * Creates the inline keyboard for subscription options with JSON callback data.
@@ -50,7 +50,6 @@ async function sendSubscriptionOptions(bot, chatId, isPremium) {
     };
     await sendTelegramMessage(bot, chatId, "Choose a plan to upgrade your GoalBot experience:", options);
 }
-
 
 module.exports = {
     getSubscriptionOptions,

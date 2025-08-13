@@ -1,12 +1,11 @@
-// File: src/utils/cronJobs.js
+// File: src/utils/cronJobs.js - FINAL CORRECTED VERSION
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const User = require('../models/user');
 const { sendTelegramMessage } = require('../handlers/messageHandlers');
 const { getSmartResponse } = require('./getSmartResponse');
-const { createAndSaveChecklist } = require('../controllers/userController');
+const { createAndSaveChecklist, getChecklistByDate } = require('../controllers/userController');
 const { createChecklistMessage, createChecklistKeyboard } = require('../handlers/messageHandlers');
-const { getChecklistByDate } = require('../controllers/userController');
 
 
 const TIMEZONE = 'Africa/Lagos';
@@ -36,8 +35,8 @@ function startDailyJobs(bot) {
             const users = await User.find({});
             for (const user of users) {
                 try {
-                    const today = moment().tz(TIMEZONE).toDate();
-                    const existingChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
+                    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+                    const existingChecklist = await getChecklistByDate(user.telegramId, today);
                     if (existingChecklist) {
                         console.log(`⚠️ User ${user.telegramId} already has a checklist for today. Skipping.`);
                         continue;
@@ -156,15 +155,14 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 11:59 PM Missed Check-in & Streak Reset (Retained)
+    // ⏰ 11:59 PM Missed Check-in & Streak Reset
     cron.schedule('59 23 * * *', async () => {
         console.log('⏰ Running 11:59 PM missed check-in job...');
         const today = moment().tz(TIMEZONE).toDate();
         try {
             const users = await User.find({});
             for (const user of users) {
-                // <-- FIX: Pass the correct telegramId to the function -->
-                const checklist = await getChecklistByDate(user.telegramId, today); 
+                const checklist = await getChecklistByDate(user.telegramId, today);
                 if (checklist && !checklist.checkedIn) {
                     user.currentStreak = 0;
                     user.missedCheckins = (user.missedCheckins || 0) + 1;
@@ -172,7 +170,6 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
                     console.log(`⚠️ User ${user.telegramId} missed check-in. Streak reset.`);
                 } else if (checklist && checklist.checkedIn) {
                     const yesterday = moment().tz(TIMEZONE).subtract(1, 'day').toDate();
-                    // <-- FIX: Pass the correct telegramId to the function -->
                     const yesterdayChecklist = await getChecklistByDate(user.telegramId, yesterday);
                     if(yesterdayChecklist && yesterdayChecklist.checkedIn) {
                         user.currentStreak = (user.currentStreak || 0) + 1;
