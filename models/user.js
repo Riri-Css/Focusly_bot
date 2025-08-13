@@ -123,21 +123,18 @@ const userSchema = new mongoose.Schema({
       default: false
     },
   },
-  // 🆕 UPDATED AI USAGE OBJECT
-  aiUsage: {
-    todayCount: {
-      type: Number,
-      default: 0
-    },
-    weekCount: {
-      type: Number,
-      default: 0
-    },
-    lastUpdated: { // 🆕 Renamed from `lastUsedDate` for clarity
-      type: Date,
-      default: null
-    },
-  },
+  // ✅ CORRECTED: AI USAGE SCHEMA IS NOW AN ARRAY
+  aiUsage: [{
+    date: Date,
+    generalCount: {
+        type: Number,
+        default: 0
+    },
+    checklistCount: {
+        type: Number,
+        default: 0
+    }
+}],
   gptVersion: {
     type: String,
     default: 'gpt-4o'
