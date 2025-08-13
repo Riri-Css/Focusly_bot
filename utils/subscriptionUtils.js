@@ -2,7 +2,6 @@
 
 const moment = require('moment-timezone');
 const User = require('../models/user');
-// New way to import and initialize OpenAI
 const OpenAI = require('openai');
 
 const TIMEZONE = 'Africa/Lagos';
@@ -29,11 +28,6 @@ const PLAN_DETAILS = {
     }
 };
 
-/**
- * Retrieves the details for a given plan.
- * @param {string} planName - The name of the plan ('free', 'basic', 'premium').
- * @returns {object} The plan details.
- */
 function getPlanDetails(planName) {
     return PLAN_DETAILS[planName] || PLAN_DETAILS.free;
 }
@@ -45,14 +39,20 @@ function getPlanDetails(planName) {
  * @returns {Promise<boolean>} True if the user has access, false otherwise.
  */
 async function hasAIUsageAccess(user, type = 'general') {
+    // FIX: Add a check here to ensure aiUsage is an array before any other operations
+    if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
+        user.aiUsage = [];
+    }
+
     if (user.subscriptionPlan === 'premium') {
-        return true; // Premium users have unlimited access
+        return true;
     }
 
     const planLimits = getPlanDetails(user.subscriptionPlan).aiUsageLimit;
     if (!planLimits) {
         return false;
     }
+    
     const today = moment().tz(TIMEZONE).startOf('day').toDate();
 
     let usage = user.aiUsage.find(u => moment(u.date).isSame(today, 'day'));
@@ -76,8 +76,13 @@ async function hasAIUsageAccess(user, type = 'general') {
  * @param {string} type - The type of usage ('general' or 'checklist').
  */
 async function trackAIUsage(user, type) {
+    // FIX: Add a check here as well for consistency
+    if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
+        user.aiUsage = [];
+    }
+    
     if (user.subscriptionPlan === 'premium') {
-        return; // Premium users don't have usage tracked
+        return;
     }
     
     const today = moment().tz(TIMEZONE).startOf('day').toDate();
