@@ -69,7 +69,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         // Define prices for your plans
         const prices = {
             'basic': 1000,   // ₦1,000.00
-            'premium': 3000 // ₦3,000.00
+            'premium': 3000 // ₦1,500.00
         };
         const amount = prices[plan];
 
