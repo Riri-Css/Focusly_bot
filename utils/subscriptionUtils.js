@@ -1,5 +1,4 @@
-// File: src/utils/subscriptionUtils.js - FINAL CORRECTED VERSION
-
+// File: src/utils/subscriptionUtils.js - FINAL AND DEFINITIVE VERSION
 const moment = require('moment-timezone');
 const User = require('../models/user');
 const OpenAI = require('openai');
@@ -39,7 +38,7 @@ function getPlanDetails(planName) {
  * @returns {Promise<boolean>} True if the user has access, false otherwise.
  */
 async function hasAIUsageAccess(user, type = 'general') {
-    // FIX: Add a check here to ensure aiUsage is an array before any other operations
+    // FIX: The final safety check to prevent the TypeError
     if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
         user.aiUsage = [];
     }
@@ -76,7 +75,7 @@ async function hasAIUsageAccess(user, type = 'general') {
  * @param {string} type - The type of usage ('general' or 'checklist').
  */
 async function trackAIUsage(user, type) {
-    // FIX: Add a check here as well for consistency
+    // FIX: Final safety check for consistency
     if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
         user.aiUsage = [];
     }
