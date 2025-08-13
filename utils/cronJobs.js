@@ -5,7 +5,8 @@ const User = require('../models/user');
 const { sendTelegramMessage } = require('./telegram');
 // 🆕 New imports to support the new checklist flow
 const { getSmartResponse } = require('./getSmartResponse');
-const { createChecklist } = require('../controllers/userController');
+// 🐛 FIX: Imported the correct function name to match userController.js
+const { createAndSaveChecklist } = require('../controllers/userController');
 const { getModelForUser } = require('../utils/subscriptionUtils');
 const { createChecklistMessage, createChecklistKeyboard } = require('../handlers/messageHandlers');
 
@@ -38,7 +39,7 @@ function startDailyJobs(bot) {
       for (const user of users) {
         try {
           const today = moment().tz(TIMEZONE).toDate();
-          const model = await getModelForUser(user);
+          // getModelForUser is no longer needed here as getSmartResponse will use its default.
           const goal = user.goalMemory.text;
           
           const existingChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
@@ -48,10 +49,12 @@ function startDailyJobs(bot) {
             continue;
           }
           
-          const aiResponse = await getSmartResponse(user, `My goal is: "${goal}". Please generate a new daily checklist based on this goal.`, model, false);
+          // 🐛 FIX: Removed the 'model' parameter to ensure the default model is used.
+          const aiResponse = await getSmartResponse(user, `My goal is: "${goal}". Please generate a new daily checklist based on this goal.`, false);
           
           if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
-            const newChecklist = await createChecklist(user, aiResponse.weekly_goal, aiResponse.daily_tasks);
+            // 🐛 FIX: Changed the function call to use the correct name from userController.js
+            const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
             
             const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${aiResponse.weekly_goal}\n\n` + createChecklistMessage(newChecklist);
             const keyboard = createChecklistKeyboard(newChecklist);
