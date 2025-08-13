@@ -15,7 +15,7 @@ async function generatePaystackLink(user, amount, plan) {
     try {
         const payload = {
             email: user.email || 'user@example.com', // Use a default email if none exists
-            amount: amount * 100, // Paystack expects amount in kobo (or cents)
+            amount: amount, // Paystack expects amount in kobo (or cents)
             callback_url: CALLBACK_URL,
             metadata: {
                 custom_fields: [{
