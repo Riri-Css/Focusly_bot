@@ -1,6 +1,23 @@
-// utils/subscriptionUtils.js
-
+// File: src/utils/subscriptionUtils.js
 const moment = require('moment');
+
+// --- NEW CODE: Centralized plan details ---
+function getPlanDetails(plan) {
+    const plans = {
+        'basic': {
+            name: 'Basic',
+            price: 1000,   // price in Naira
+            priceInKobo: 1000 * 100 // price for Paystack
+        },
+        'premium': {
+            name: 'Premium',
+            price: 1500,   // price in Naira
+            priceInKobo: 1500 * 100 // price for Paystack
+        }
+    };
+    return plans[plan] || null;
+}
+// --- END NEW CODE ---
 
 function isTrialExpired(user) {
   if (!user.trialStartDate) return true;
@@ -26,16 +43,13 @@ function canAccessAI(user, feature = 'general') {
   
   if (plan === 'premium') return true;
 
-  // 🆕 NEW: Reset usage if the day/week has changed
   if (user.lastUsageUpdate) {
     const lastUpdateMoment = moment(user.lastUsageUpdate);
     
-    // Reset daily count if it's a new day
     if (!moment().isSame(lastUpdateMoment, 'day')) {
       user.dailyAIUses = 0;
     }
     
-    // Reset weekly count if it's a new week
     if (!moment().isSame(lastUpdateMoment, 'week')) {
       user.weeklyAIUses = 0;
     }
@@ -43,7 +57,7 @@ function canAccessAI(user, feature = 'general') {
 
   if (plan === 'basic') {
     if (feature === 'checklist') return (user.weeklyAIUses || 0) < 10;
-    return false; // Basic plan does not allow general AI chat
+    return false;
   }
   
   if (plan === 'trial') {
@@ -55,8 +69,6 @@ function canAccessAI(user, feature = 'general') {
 
 function incrementAIUsage(user, feature = 'general') {
   const plan = getUserPlan(user);
-  
-  // 🆕 NEW: Update the timestamp before checking
   user.lastUsageUpdate = new Date();
 
   if (plan === 'basic' && feature === 'checklist') {
@@ -64,9 +76,6 @@ function incrementAIUsage(user, feature = 'general') {
   } else if (plan === 'trial') {
     user.dailyAIUses = (user.dailyAIUses || 0) + 1;
   }
-  // No increment for premium or other plans since they are unlimited
-
-  // 🆕 The user.save() is already here, which is correct
   return user.save();
 }
 
@@ -78,15 +87,15 @@ function getAIModel(user) {
   return null;
 }
 
-// Aliased exports for messageHandlers.js compatibility
 module.exports = {
   hasAIUsageAccess: canAccessAI,
   trackAIUsage: incrementAIUsage,
   getModelForUser: getAIModel,
-  recordAIUsage: incrementAIUsage, // alias for flexibility
+  recordAIUsage: incrementAIUsage,
   isTrialExpired,
   hasActiveSubscription,
   getUserPlan,
   checkAIEligibility: canAccessAI,
   getUserPlan,
+  getPlanDetails // <-- NEW: Export the centralized function
 };
