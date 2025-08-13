@@ -1,4 +1,4 @@
-// File: src/handlers/callbackHandlers.js
+// File: src/handlers/callbackHandlers.js - UPDATED
 const User = require('../models/user');
 const {
   getChecklistById,
@@ -12,6 +12,7 @@ const {
   createFinalCheckinMessage,
   sendTelegramMessage,
 } = require('./messageHandlers');
+const { generatePaystackLink } = require('../utils/paystackUtils'); // <-- NEW: Import your Paystack utility
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
@@ -54,18 +55,56 @@ async function handleCallbackQuery(bot, callbackQuery) {
       return sendTelegramMessage(bot, chatId, 'Error: Could not retrieve or create user.');
     }
 
-    // Split callback data on '|'
+    let parsedData;
+    try {
+        parsedData = JSON.parse(data);
+    } catch (e) {
+        parsedData = null; // Data is not a JSON object, proceed to checklist logic
+    }
+    
+    // Check if the data is for a subscription
+    if (parsedData && parsedData.action === 'subscribe') {
+        const plan = parsedData.plan;
+        
+        // Define prices for your plans
+        const prices = {
+            'basic': 1000,   // ₦1,000.00
+            'premium': 3000 // ₦3,000.00
+        };
+        const amount = prices[plan];
+
+        if (!amount) {
+            return sendTelegramMessage(bot, chatId, `Sorry, the price for the ${plan} plan is not available.`);
+        }
+
+        const paymentUrl = await generatePaystackLink(user, amount, plan);
+
+        if (paymentUrl) {
+            const keyboard = {
+                inline_keyboard: [
+                    [{ text: `Proceed to Pay ₦${amount}`, url: paymentUrl }]
+                ]
+            };
+            await sendTelegramMessage(bot, chatId, 
+                `Click the button below to complete your payment for the **${plan}** plan:`, 
+                { reply_markup: keyboard }
+            );
+        } else {
+            await sendTelegramMessage(bot, chatId, 'An error occurred while preparing your payment link. Please try again.');
+        }
+        return; // Exit the function after handling subscription
+    }
+
+    // Existing checklist handling logic
     const [action, checklistId, taskIndexStr] = data.split('|');
     const taskIndex = taskIndexStr ? parseInt(taskIndexStr, 10) : null;
 
-    // Handle test_callback separately (no checklistId or taskIndex needed)
     if (action === 'test_callback') {
-      console.log('✅ Test callback triggered!');
-      await sendTelegramMessage(bot, chatId, 'You clicked the test button!');
-      return;
+        console.log('✅ Test callback triggered!');
+        await sendTelegramMessage(bot, chatId, 'You clicked the test button!');
+        return;
     }
 
-    // For other actions, get checklist first
     const checklist = await getChecklistById(user.telegramId, checklistId);
     if (!checklist) {
       console.error(`❌ Checklist ID ${checklistId} not found during callback.`);
