@@ -6,9 +6,7 @@ const {
     addImportantMemory,
     getChecklistByDate,
     handleDailyCheckinReset,
-    submitCheckin,
-    createAndSaveChecklist,
-    getChecklistById
+    createAndSaveChecklist
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
 const { getSmartResponse } = require('../utils/getSmartResponse');
@@ -145,9 +143,9 @@ async function handleMessage(bot, msg) {
         let user = await getOrCreateUser(telegramId);
         await handleDailyCheckinReset(user);
 
-        const command = userInput.toLowerCase();
+        const command = userInput.toLowerCase().split(' ')[0];
 
-        if (userInput === '/testbutton') {
+        if (command === '/testbutton') {
             await sendTelegramMessage(bot, chatId, "Click a button below:", {
                 reply_markup: {
                     inline_keyboard: [
@@ -225,8 +223,8 @@ async function handleMessage(bot, msg) {
             return;
         }
 
-        if (command.startsWith('/remember')) {
-            const textToRemember = command.replace('/remember', '').trim();
+        if (command === '/remember') {
+            const textToRemember = userInput.replace('/remember', '').trim();
             if (textToRemember) {
                 await addImportantMemory(user, textToRemember);
                 await sendTelegramMessage(bot, chatId, "Got it. I've added that to your long-term memory.");
@@ -253,7 +251,7 @@ async function handleMessage(bot, msg) {
         }
 
         await addRecentChat(user, userInput);
-        
+
         const aiResponse = await getSmartResponse(user, userInput, model);
 
         if (aiResponse.intent === 'create_checklist') {
