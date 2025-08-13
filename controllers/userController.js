@@ -1,6 +1,5 @@
-// File: src/controllers/userController.js - CORRECTED VERSION
+// File: src/controllers/userController.js - FINAL CORRECTED VERSION
 // This file contains the logic for handling user messages and interacting with the database.
-// This version is cleaned up to correctly handle daily resets and work in tandem with messageHandlers.
 
 const User = require('../models/user');
 const moment = require('moment-timezone');
@@ -67,15 +66,15 @@ async function createAndSaveChecklist(telegramId, aiResponse) {
 
         if (user) {
             const newChecklist = {
-                _id: new mongoose.Types.ObjectId(), // <-- FIXED: Use _id for consistency
+                _id: new mongoose.Types.ObjectId(), // Using _id for consistency
                 weeklyGoal: aiResponse.weekly_goal || user.goalMemory.text,
                 tasks: aiResponse.daily_tasks.map(task => ({
                     ...task,
-                    _id: new mongoose.Types.ObjectId(), // <-- FIXED: Use _id for consistency
+                    _id: new mongoose.Types.ObjectId(), // Using _id for consistency
                     completed: false
                 })),
                 checkedIn: false,
-                date: moment().tz(TIMEZONE).startOf('day').toDate() // Use start of day for consistent comparison
+                date: moment().tz(TIMEZONE).startOf('day').toDate()
             };
             
             // Check if a checklist for today already exists to avoid duplicates
