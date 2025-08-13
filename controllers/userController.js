@@ -4,6 +4,7 @@
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
+const { getPlanDetails } = require('../utils/subscriptionUtils');
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -26,15 +27,24 @@ async function getOrCreateUser(telegramId) {
                 consecutiveChecks: 0,
                 subscriptionStatus: 'inactive',
                 subscriptionPlan: 'free',
-                aiUsageCount: 0,
+                // FIX: Initialize aiUsage as an array instead of aiUsageCount
+                aiUsage: [], 
                 onboardingStep: 'start',
                 recentChats: [],
                 importantMemories: [],
             });
             await user.save();
             console.log(`New user created: ${telegramId}`);
+        } else {
+            // FIX: Ensure existing users also have the aiUsage field as an array
+            if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
+                user.aiUsage = [];
+                // Save the user to persist this change
+                await user.save();
+            }
         }
-        // Handle cases where existing users in the database don't have these fields yet
+        
+        // Handle cases where other existing users in the database don't have these fields yet
         if (!user.recentChats) {
             user.recentChats = [];
         }
@@ -62,8 +72,7 @@ async function getOrCreateUser(telegramId) {
  */
 async function createAndSaveChecklist(telegramId, aiResponse) {
     try {
-        const user = await User.findOne({ telegramId });
-
+        const user = await getOrCreateUser(telegramId); // Using the robust getOrCreateUser
         if (user) {
             const newChecklist = {
                 _id: new mongoose.Types.ObjectId(), // Using _id for consistency
@@ -104,7 +113,7 @@ async function createAndSaveChecklist(telegramId, aiResponse) {
  */
 async function getChecklistByDate(telegramId, dateObj) {
     try {
-        const user = await User.findOne({ telegramId });
+        const user = await getOrCreateUser(telegramId);
         if (!user) {
             return null;
         }
@@ -157,7 +166,7 @@ async function handleDailyCheckinReset(user) {
  */
 async function updateChecklist(telegramId, updatedChecklist) {
     try {
-        const user = await User.findOne({ telegramId });
+        const user = await getOrCreateUser(telegramId);
         if (!user) {
             console.error("User not found, cannot update checklist.");
             return null;
@@ -185,7 +194,7 @@ async function updateChecklist(telegramId, updatedChecklist) {
  */
 async function getChecklistById(telegramId, checklistId) {
     try {
-        const user = await User.findOne({ telegramId });
+        const user = await getOrCreateUser(telegramId);
         if (!user) {
             return null;
         }
