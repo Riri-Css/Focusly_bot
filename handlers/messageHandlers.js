@@ -8,7 +8,7 @@ const {
     handleDailyCheckinReset,
     createAndSaveChecklist
 } = require('../controllers/userController');
-const { hasAIUsageAccess, trackAIUsage, getModelForUser } = require('../utils/subscriptionUtils');
+const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const moment = require('moment-timezone');
@@ -111,7 +111,7 @@ async function checkAIUsageAndGetModel(user, chatId, bot) {
         await sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
         return null;
     }
-    const model = getModelForUser(user);
+    const model = user.gptVersion; // Use the gptVersion from the user object
     if (!model) {
         await sendTelegramMessage(bot, chatId, "Your current plan doesn't support AI access. Upgrade to continue.");
         return null;
@@ -136,7 +136,7 @@ async function handleMessage(bot, msg) {
 
     try {
         if (!userInput) {
-            await sendTelegramMessage(bot, chatId, "Hmm, I didn’t catch that. Try sending it again.");
+            await sendTelegramMessage(bot, chatId, "Sorry, I can only process text messages. Please try sending it again with words.");
             return;
         }
 
@@ -251,8 +251,10 @@ async function handleMessage(bot, msg) {
         }
 
         await addRecentChat(user, userInput);
-
-        const aiResponse = await getSmartResponse(user, userInput, model);
+        
+        // This is the CRITICAL FIX for the `null` content error.
+        // It correctly passes the prompt type and user input.
+        const aiResponse = await getSmartResponse(user, 'general_chat', { userInput: userInput });
 
         if (aiResponse.intent === 'create_checklist') {
             if (aiResponse.challenge_message) {
