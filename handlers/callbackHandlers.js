@@ -10,7 +10,7 @@ const {
     createChecklistKeyboard,
     createChecklistMessage,
     createFinalCheckinMessage,
-    sendTelegramMessage, // <-- CORRECTED IMPORT
+    sendTelegramMessage,
 } = require('./messageHandlers');
 const { generatePaystackLink } = require('../utils/paystackUtils');
 const { getPlanDetails } = require('../utils/subscriptionUtils');
@@ -76,7 +76,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         const [action, checklistId, taskIndexStr] = data.split('|');
         const taskIndex = taskIndexStr ? parseInt(taskIndexStr, 10) : null;
 
-        await bot.answerCallbackQuery(callbackQuery.id);
+        await bot.answerCallbackQuery(callbackQuery.id); // This prevents the button from showing a loading animation forever
 
         if (action === 'test_callback') {
             console.log('✅ Test callback triggered!');
@@ -100,7 +100,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 const taskToToggle = checklist.tasks[taskIndex];
                 if (taskToToggle) {
                     taskToToggle.completed = !taskToToggle.completed;
-                    await updateChecklist(user.telegramId, checklist);
+                    await toggleTaskCompletion(user.telegramId, checklist);
 
                     const keyboard = createChecklistKeyboard(checklist);
                     const messageText =
@@ -126,9 +126,9 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 }
 
                 checklist.checkedIn = true;
-                await updateChecklist(user.telegramId, checklist);
+                await submitCheckin(user, checklistId);
                 
-                const submittedUser = await submitCheckin(user, checklistId);
+                const submittedUser = await getOrCreateUser(user.telegramId);
                 const finalMessage = createFinalCheckinMessage(submittedUser, checklist);
 
                 await bot.editMessageText(finalMessage, {
