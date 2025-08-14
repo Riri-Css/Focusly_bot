@@ -11,6 +11,7 @@ const callbackHandlers = require('./handlers/callbackHandlers'); // <-- IMPORTED
 const subscriptionRoutes = require('./handlers/subscriptionHandlers');
 const { startDailyJobs } = require('./utils/cronJobs');
 const { scheduleCustomReminders } = require('./utils/reminderScheduler');
+const { startReflectionCrons } = require('./utils/reflectionCrons'); // <-- NEW IMPORT
 
 const app = express();
 app.use(bodyParser.json());
@@ -62,6 +63,7 @@ app.get('/', (req, res) => {
 
     startDailyJobs(bot);
     scheduleCustomReminders(bot);
+    startReflectionCrons(bot); // <-- NEW: Start the reflection cron jobs
   } catch (err) {
     console.error('❌ MongoDB connection error:', err);
   }
