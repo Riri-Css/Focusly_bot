@@ -3,8 +3,8 @@
 const express = require('express');
 const crypto = require('crypto');
 const User = require('../models/user');
-const { sendTelegramMessage } = require('../utils/telegram');
-const { bot } = require('../server'); // ✅ CORRECTED IMPORT
+const { bot } = require('../server');
+const { sendTelegramMessage } = require('../handlers/messageHandlers'); // ✅ CORRECTED IMPORT
 
 const router = express.Router();
 
@@ -35,8 +35,8 @@ router.post(
         const data = event.data;
 
         // Extract metadata
-        const telegramId = data.metadata?.custom_fields?.[0]?.telegramId; // ✅ CORRECTED: Use custom_fields
-        const plan = data.metadata?.custom_fields?.[0]?.plan; // ✅ CORRECTED: Use custom_fields
+        const telegramId = data.metadata?.custom_fields?.[0]?.telegramId;
+        const plan = data.metadata?.custom_fields?.[0]?.plan;
 
         if (!telegramId || !plan) {
           console.warn('⚠️ Missing telegramId or plan in webhook metadata');
@@ -52,8 +52,8 @@ router.post(
         
         // Update subscription
         user.subscriptionStatus = 'active';
-        user.subscriptionPlan = plan; // ✅ Set the plan
-        user.subscriptionStartDate = new Date(); // ✅ Set the start date
+        user.subscriptionPlan = plan;
+        user.subscriptionStartDate = new Date();
         user.subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
         await user.save();
 
