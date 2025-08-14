@@ -11,11 +11,11 @@ const {
 const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
-const { updateSubscription } = require('../utils/adminUtils'); // <-- NEW IMPORT
+const { updateSubscription } = require('../utils/adminUtils');
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID; // <-- Add your Telegram ID to .env
+const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 
 /**
  * Sends a message to a specific chat with optional inline keyboard.
@@ -216,6 +216,7 @@ async function handleMessage(bot, msg) {
             if (user.onboardingStep === 'awaiting_goal') {
                 return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
             } else if (user.onboardingStep !== 'onboarded') {
+                // Corrected line: 'start' is a command, 'awaiting_goal' is the state
                 user.onboardingStep = 'awaiting_goal';
                 await user.save();
                 return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
