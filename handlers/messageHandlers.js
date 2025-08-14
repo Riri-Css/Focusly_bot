@@ -1,4 +1,5 @@
-// File: src/handlers/messageHandlers.js - FINAL CORRECTED VERSION
+
+// File: src/handlers/messageHandlers.js - UPDATED VERSION
 
 const {
     getOrCreateUser,
@@ -79,17 +80,32 @@ function createChecklistKeyboard(checklist) {
 }
 
 /**
- * Creates the final check-in message text.
+ * Creates the final check-in message text based on performance and streak.
  * @param {object} user - The user object.
  * @param {object} checklist - The checklist object.
- * @returns {string} The formatted message string.
+ * @returns {string} The formatted message string with dynamic attitude.
  */
 function createFinalCheckinMessage(user, checklist) {
     const completedTasksCount = checklist.tasks.filter(task => task.completed).length;
     const totalTasksCount = checklist.tasks.length;
+    const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
+    const streakCount = user.streak || 0;
+    const tasksMissed = totalTasksCount - completedTasksCount;
+
     let message = `**Check-in Complete!** 🎉\n\n`;
-    message += `You completed **${completedTasksCount}** out of **${totalTasksCount}** tasks today.\n`;
-    message += `Your current streak is now at **${user.streak}** days! Keep up the great work!`;
+
+    // Dynamic message based on performance
+    if (completionPercentage === 100) {
+        message += `You crushed it! You completed **all ${totalTasksCount} tasks** today. This is the consistency we're looking for! Keep it up! 💪`;
+    } else if (completionPercentage > 50) {
+        message += `Great job! You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. You're building solid momentum. Let's get to 100% tomorrow!`;
+    } else if (completionPercentage > 0) {
+        message += `Alright, let's pick up the pace. You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. Don't let those goals slip away. Consistency is key! 😠`;
+    } else {
+        message += `You completed **0 out of ${totalTasksCount} tasks**. I know it's tough, but you can't hit your goals if you don't even start. The tasks you missed have been added to your list for tomorrow. Get to work! 😤`;
+    }
+
+    message += `\n\nYour current streak is now at **${streakCount}** days.`;
     return message;
 }
 
@@ -179,7 +195,7 @@ async function handleMessage(bot, msg) {
             if (isActive) {
                 await sendTelegramMessage(bot, chatId, `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(user.subscriptionEndDate).tz(TIMEZONE).format('LL')}**. Thank you for your continued support!`);
             } else {
-                await sendSubscriptionOptions(bot, chatId, isPremium, sendTelegramMessage); // <-- CORRECTED CALL
+                await sendSubscriptionOptions(bot, chatId, isPremium, sendTelegramMessage);
             }
             return;
         }
@@ -193,7 +209,8 @@ async function handleMessage(bot, msg) {
             
             if (checklist) {
                 if (checklist.checkedIn) {
-                    return sendTelegramMessage(bot, chatId, `You've already checked in for today! You completed ${checklist.tasks.filter(t => t.completed).length} out of ${checklist.tasks.length} tasks. Great job!`);
+                    const finalMessage = createFinalCheckinMessage(user, checklist);
+                    return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
                     const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` + createChecklistMessage(checklist);
                     const keyboard = createChecklistKeyboard(checklist);
@@ -252,8 +269,6 @@ async function handleMessage(bot, msg) {
 
         await addRecentChat(user, userInput);
         
-        // This is the CRITICAL FIX for the `null` content error.
-        // It correctly passes the prompt type and user input.
         const aiResponse = await getSmartResponse(user, 'general_chat', { userInput: userInput });
 
         if (aiResponse.intent === 'create_checklist') {
@@ -290,5 +305,5 @@ module.exports = {
     createChecklistMessage,
     createChecklistKeyboard,
     createFinalCheckinMessage,
-    sendTelegramMessage // <-- EXPORTED
+    sendTelegramMessage
 };
