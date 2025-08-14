@@ -1,7 +1,5 @@
-// File: src/controllers/userController.js - FINAL CORRECTED VERSION
-// This file contains the logic for handling user messages and interacting with the database.
-// This version is cleaned up to correctly handle daily resets and work in tandem with messageHandlers.
 
+// File: src/controllers/userController.js - UPDATED VERSION
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
@@ -27,7 +25,6 @@ async function getOrCreateUser(telegramId) {
                 consecutiveChecks: 0,
                 subscriptionStatus: 'inactive',
                 subscriptionPlan: 'free',
-                // FIX: Initialize aiUsage as an array instead of aiUsageCount
                 aiUsage: [], 
                 onboardingStep: 'start',
                 recentChats: [],
@@ -36,14 +33,11 @@ async function getOrCreateUser(telegramId) {
             await user.save();
             console.log(`New user created: ${telegramId}`);
         } else {
-            // FIX: Ensure existing users also have the aiUsage field as an array
             if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
                 user.aiUsage = [];
-                // If aiUsageCount exists from an old schema, it will be ignored now
                 await user.save();
             }
         }
-        // Handle cases where existing users in the database don't have these fields yet
         if (!user.recentChats) {
             user.recentChats = [];
         }
@@ -64,7 +58,7 @@ async function getOrCreateUser(telegramId) {
 }
 
 /**
- * Creates and saves a new checklist for a user.
+ * Creates and saves a new checklist for a user, including any uncompleted tasks from yesterday.
  * @param {string} telegramId The unique ID of the user on Telegram.
  * @param {object} aiResponse The AI response object containing the checklist data.
  * @returns {Promise<Object|null>} The newly created checklist or null if an error occurs.
@@ -72,31 +66,45 @@ async function getOrCreateUser(telegramId) {
 async function createAndSaveChecklist(telegramId, aiResponse) {
     try {
         const user = await getOrCreateUser(telegramId);
-        if (user) {
-            const newChecklist = {
-                _id: new mongoose.Types.ObjectId(), 
-                weeklyGoal: aiResponse.weekly_goal || user.goalMemory.text,
-                tasks: aiResponse.daily_tasks.map(task => ({
-                    ...task,
-                    _id: new mongoose.Types.ObjectId(), 
-                    completed: false
-                })),
-                checkedIn: false,
-                date: moment().tz(TIMEZONE).startOf('day').toDate()
-            };
-            
-            if (user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(newChecklist.date, 'day'))) {
-                console.warn(`Attempted to create duplicate checklist for user ${telegramId} on ${newChecklist.date}`);
-                return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(newChecklist.date, 'day'));
-            }
-
-            user.checklists.unshift(newChecklist);
-            await user.save();
-            return newChecklist;
-        } else {
+        if (!user) {
             console.error(`User with ID ${telegramId} not found.`);
             return null;
         }
+
+        const today = moment().tz(TIMEZONE).startOf('day').toDate();
+        if (user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'))) {
+            console.warn(`Attempted to create duplicate checklist for user ${telegramId} on ${today}`);
+            return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
+        }
+
+        const yesterday = moment().tz(TIMEZONE).subtract(1, 'day').startOf('day').toDate();
+        const yesterdayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(yesterday, 'day'));
+        const uncompletedTasks = (yesterdayChecklist?.tasks || []).filter(task => !task.completed);
+        
+        const newTasks = uncompletedTasks.map(task => ({
+            text: task.text + " (from yesterday)",
+            _id: new mongoose.Types.ObjectId(),
+            completed: false,
+            isCarriedOver: true
+        })).concat(aiResponse.daily_tasks.map(task => ({
+            ...task,
+            _id: new mongoose.Types.ObjectId(),
+            completed: false,
+            isCarriedOver: false
+        })));
+
+        const newChecklist = {
+            _id: new mongoose.Types.ObjectId(), 
+            weeklyGoal: aiResponse.weekly_goal || user.goalMemory.text,
+            tasks: newTasks,
+            checkedIn: false,
+            date: today
+        };
+        
+        user.checklists.unshift(newChecklist);
+        await user.save();
+        return newChecklist;
+
     } catch (error) {
         console.error('Error creating and saving checklist:', error);
         throw error;
@@ -138,14 +146,14 @@ async function handleDailyCheckinReset(user) {
         const now = moment().tz(TIMEZONE);
         const todayStart = now.clone().startOf('day');
 
-        if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(todayStart, 'day')) {
-            const yesterdayStart = todayStart.clone().subtract(1, 'day');
+        if (user.lastCheckinDate) {
+            const lastCheckinMoment = moment(user.lastCheckinDate).tz(TIMEZONE);
+            const isYesterday = lastCheckinMoment.isSame(todayStart.clone().subtract(1, 'day'), 'day');
+            const isToday = lastCheckinMoment.isSame(todayStart, 'day');
             
-            if (!user.lastCheckinDate || moment(user.lastCheckinDate).tz(TIMEZONE).isBefore(yesterdayStart, 'day')) {
-                if (user.streak > 0) {
-                    console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
-                    user.streak = 0;
-                }
+            if (!isYesterday && !isToday) {
+                console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
+                user.streak = 0;
             }
         }
         await user.save();
@@ -153,6 +161,7 @@ async function handleDailyCheckinReset(user) {
         console.error("❌ Error handling daily check-in reset:", error);
     }
 }
+
 
 /**
  * Updates a checklist for a user.
@@ -182,6 +191,7 @@ async function updateChecklist(telegramId, updatedChecklist) {
     }
 }
 
+
 /**
  * Retrieves a checklist by its ID for a specific user.
  * @param {string} telegramId The user's Telegram ID.
@@ -203,23 +213,22 @@ async function getChecklistById(telegramId, checklistId) {
 
 /**
  * Toggles the completion status of a task in a user's checklist.
- * @param {User} user The user document.
+ * @param {string} telegramId The user's Telegram ID.
  * @param {string} checklistId The ID of the checklist.
  * @param {number} taskIndex The index of the task to toggle.
  * @returns {Object|null} The updated checklist or null if not found.
  */
-async function toggleTaskCompletion(user, checklistId, taskIndex) {
-    if (!user) {
-        return null;
-    }
-
+async function toggleTaskCompletion(telegramId, checklistId, taskIndex) {
     try {
+        const user = await getOrCreateUser(telegramId);
+        if (!user) {
+            return null;
+        }
         const checklist = user.checklists.find(c => c._id.toString() === checklistId);
         if (!checklist) {
             console.error(`Checklist not found with ID: ${checklistId}`);
             return null;
         }
-
         if (checklist.tasks[taskIndex]) {
             checklist.tasks[taskIndex].completed = !checklist.tasks[taskIndex].completed;
             await user.save();
@@ -251,26 +260,36 @@ async function submitCheckin(user, checklistId) {
             return null;
         }
         
-        // Use moment to check if it's the same day
-        const todayStart = moment().tz(TIMEZONE).startOf('day');
-        const lastCheckinIsToday = user.lastCheckinDate && moment(user.lastCheckinDate).tz(TIMEZONE).isSame(todayStart, 'day');
-
-        if (checklist.checkedIn || lastCheckinIsToday) {
-            // Return the user without changes if they've already checked in
-            return user;
+        if (checklist.checkedIn) {
+            return user; // Already checked in, do nothing
         }
 
-        user.lastCheckinDate = new Date();
-        user.streak = (user.streak || 0) + 1;
+        const todayStart = moment().tz(TIMEZONE).startOf('day');
+        const yesterdayStart = todayStart.clone().subtract(1, 'day');
+        
+        const lastCheckinDate = user.lastCheckinDate ? moment(user.lastCheckinDate).tz(TIMEZONE).startOf('day') : null;
+        
+        // Check if the last check-in was yesterday
+        if (lastCheckinDate && lastCheckinDate.isSame(yesterdayStart, 'day')) {
+            user.streak = (user.streak || 0) + 1;
+        } else if (lastCheckinDate && lastCheckinDate.isSame(todayStart, 'day')) {
+            // User already checked in today, do nothing. This is a double check.
+        } else {
+            // Missed a day or this is the first check-in
+            user.streak = 1;
+        }
+        
         checklist.checkedIn = true;
+        user.lastCheckinDate = todayStart.toDate();
+        
         await user.save();
-
         return user;
     } catch (error) {
         console.error("❌ Error submitting check-in:", error);
         return null;
     }
 }
+
 
 /**
  * Adds a recent chat message to a user's history.
@@ -284,12 +303,10 @@ async function addRecentChat(user, chatText) {
     }
     
     try {
-        // Ensure recentChats is an array before pushing
         if (!user.recentChats) {
             user.recentChats = [];
         }
         user.recentChats.push({ text: chatText, timestamp: new Date() });
-        // Keep only the last 10 messages to avoid the array growing too large.
         if (user.recentChats.length > 10) {
             user.recentChats.shift();
         }
