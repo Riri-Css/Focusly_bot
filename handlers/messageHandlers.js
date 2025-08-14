@@ -9,7 +9,7 @@ const {
     createAndSaveChecklist
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
-const { sendSubscriptionOptions } = require = ('../utils/telegram');
+const { sendSubscriptionOptions } = require('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { updateSubscription } = require('../utils/adminUtils'); // <-- NEW IMPORT
 const moment = require('moment-timezone');
