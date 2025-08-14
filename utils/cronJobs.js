@@ -29,7 +29,7 @@ function startDailyJobs(bot) {
     }, { timezone: TIMEZONE });
 
     // ⏰ 8 AM Daily Checklist Generator
-    cron.schedule('20 12 * * *', async () => {
+    cron.schedule('* 8 * * *', async () => {
         console.log('⏰ Running 8 AM daily checklist generator...');
         try {
             const users = await User.find({});
