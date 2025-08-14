@@ -1,5 +1,4 @@
-
-// File: src/handlers/messageHandlers.js - UPDATED VERSION
+// File: src/handlers/messageHandlers.js - FINAL VERSION
 
 const {
     getOrCreateUser,
@@ -10,11 +9,13 @@ const {
     createAndSaveChecklist
 } = require('../controllers/userController');
 const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
-const { sendSubscriptionOptions } = require('../utils/telegram');
+const { sendSubscriptionOptions } = require = ('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
+const { updateSubscription } = require('../utils/adminUtils'); // <-- NEW IMPORT
 const moment = require('moment-timezone');
 
 const TIMEZONE = 'Africa/Lagos';
+const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID; // <-- Add your Telegram ID to .env
 
 /**
  * Sends a message to a specific chat with optional inline keyboard.
@@ -90,11 +91,9 @@ function createFinalCheckinMessage(user, checklist) {
     const totalTasksCount = checklist.tasks.length;
     const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
     const streakCount = user.streak || 0;
-    const tasksMissed = totalTasksCount - completedTasksCount;
 
     let message = `**Check-in Complete!** 🎉\n\n`;
 
-    // Dynamic message based on performance
     if (completionPercentage === 100) {
         message += `You crushed it! You completed **all ${totalTasksCount} tasks** today. This is the consistency we're looking for! Keep it up! 💪`;
     } else if (completionPercentage > 50) {
@@ -160,6 +159,45 @@ async function handleMessage(bot, msg) {
         await handleDailyCheckinReset(user);
 
         const command = userInput.toLowerCase().split(' ')[0];
+
+        // NEW: Handle the admin command to manually grant subscription access
+        if (command === '/allowaccess') {
+            if (chatId.toString() !== ADMIN_TELEGRAM_ID) {
+                return sendTelegramMessage(bot, chatId, "🚫 You are not authorized to use this command.");
+            }
+
+            const parts = userInput.split(' ');
+            if (parts.length !== 3) {
+                return sendTelegramMessage(bot, chatId, "Usage: /allowaccess <telegramId> <plan>");
+            }
+
+            const targetTelegramId = parts[1];
+            const plan = parts[2].toLowerCase();
+
+            if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
+                try {
+                    const updatedUser = await updateSubscription(targetTelegramId, plan);
+                    
+                    if (updatedUser) {
+                        // Send confirmation message to the admin
+                        await sendTelegramMessage(bot, chatId, `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`);
+                        
+                        // Send congratulatory message to the user
+                        await sendTelegramMessage(bot, updatedUser.telegramId, 
+                            `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
+                        );
+                    } else {
+                        await sendTelegramMessage(bot, chatId, `User with ID ${targetTelegramId} not found.`);
+                    }
+                } catch (error) {
+                    console.error("❌ Error with /allowaccess command:", error);
+                    await sendTelegramMessage(bot, chatId, `❌ An error occurred while updating the subscription.`);
+                }
+            } else {
+                await sendTelegramMessage(bot, chatId, `Invalid plan. Please use 'premium', 'basic', 'pro', or 'free'.`);
+            }
+            return;
+        }
 
         if (command === '/testbutton') {
             await sendTelegramMessage(bot, chatId, "Click a button below:", {
