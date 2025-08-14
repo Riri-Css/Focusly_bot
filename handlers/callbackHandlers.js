@@ -1,4 +1,4 @@
-// File: src/handlers/callbackHandlers.js - FINAL CORRECTED VERSION
+// File: src/handlers/callbackHandlers.js - UPDATED VERSION
 const User = require('../models/user');
 const {
     toggleTaskCompletion,
@@ -51,7 +51,6 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 
                 const amountInNaira = planDetails.price / 100;
                 
-                // ⚠️ CORRECTED: The call to generatePaystackLink no longer needs the price
                 const paymentUrl = await generatePaystackLink(user, plan);
                 
                 if (paymentUrl) {
@@ -77,7 +76,7 @@ async function handleCallbackQuery(bot, callbackQuery) {
         const [action, checklistId, taskIndexStr] = data.split('|');
         const taskIndex = taskIndexStr ? parseInt(taskIndexStr, 10) : null;
 
-        await bot.answerCallbackQuery(callbackQuery.id); // This prevents the button from showing a loading animation forever
+        await bot.answerCallbackQuery(callbackQuery.id);
 
         if (action === 'test_callback') {
             console.log('✅ Test callback triggered!');
@@ -98,16 +97,15 @@ async function handleCallbackQuery(bot, callbackQuery) {
                     await sendTelegramMessage(bot, chatId, 'Invalid task index.');
                     return;
                 }
-                const taskToToggle = checklist.tasks[taskIndex];
-                if (taskToToggle) {
-                    taskToToggle.completed = !taskToToggle.completed;
-                    await toggleTaskCompletion(user.telegramId, checklist);
+                
+                const updatedChecklist = await toggleTaskCompletion(user.telegramId, checklistId, taskIndex);
 
-                    const keyboard = createChecklistKeyboard(checklist);
+                if (updatedChecklist) {
+                    const keyboard = createChecklistKeyboard(updatedChecklist);
                     const messageText =
                         `Good morning! Here is your daily checklist to push you towards your goal:\n\n` +
                         `**Weekly Goal:** ${user.goalMemory.text}\n\n` +
-                        createChecklistMessage(checklist);
+                        createChecklistMessage(updatedChecklist);
 
                     await bot.editMessageText(messageText, {
                         chat_id: chatId,
@@ -126,11 +124,9 @@ async function handleCallbackQuery(bot, callbackQuery) {
                     return;
                 }
 
-                checklist.checkedIn = true;
-                await submitCheckin(user, checklistId);
-                
-                const submittedUser = await getOrCreateUser(user.telegramId);
-                const finalMessage = createFinalCheckinMessage(submittedUser, checklist);
+                const submittedUser = await submitCheckin(user, checklistId);
+                const submittedChecklist = await getChecklistById(user.telegramId, checklistId);
+                const finalMessage = createFinalCheckinMessage(submittedUser, submittedChecklist);
 
                 await bot.editMessageText(finalMessage, {
                     chat_id: chatId,
