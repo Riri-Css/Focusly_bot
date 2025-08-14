@@ -1,8 +1,11 @@
-// File: src/utils/getSmartResponse.js - FULL UPDATED
+// File: src/utils/getSmartResponse.js - CORRECTED & UPDATED
+
 const openai = require('./openai');
 const { getModelForUser } = require('../utils/subscriptionUtils');
+const moment = require('moment-timezone');
+const TIMEZONE = 'Africa/Lagos';
 
-async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', strictMode = false) {
+async function getSmartResponse(user, promptType, data = {}, strictMode = false) {
     try {
         const userModel = getModelForUser(user);
         if (!userModel) {
@@ -11,10 +14,9 @@ async function getSmartResponse(user, promptType, data = {}, model = 'gpt-4o', s
         }
 
         let systemPromptContent, userInput;
-
         const goal = user.goalMemory?.text || 'No specific goal provided';
-        const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).join('\n') || 'No recent chats';
-        const importantMemory = user.importantMemory?.map(mem => `Long-Term Note: ${mem.text}`).join('\n') || '';
+        const recent = user.recentChatMemory?.map(c => `User: ${c.text}`).slice(-10).join('\n') || 'No recent chats';
+        const importantMemory = user.importantMemory?.map(mem => `Long-Term Note: ${mem.text}`).slice(-5).join('\n') || '';
 
         const systemPromptHeader = `
 You are GoalBot, a strict, no-nonsense, and slightly sassy personal coach. Your purpose is to push users to achieve their goals by holding them accountable. You are not friendly or chatty. Your tone is direct, professional, and confident. You sometimes use subtle sarcasm or "sass" when a user needs a reality check.
@@ -45,15 +47,57 @@ ${recent}"`;
                 break;
 
             case 'set_goal':
-                userInput = data.userInput || "No input provided"; // safe fallback
+                userInput = data.userInput || "No input provided";
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for setting goals:\n` +
                     `{ "intent": "create_checklist", "challenge_message": "optional sassy message", "weekly_goal": "A concise, specific weekly goal.", "daily_tasks": [ {"text": "Daily task 1"}, ... ] }`;
                 break;
+            
+            // NEW: Reflection prompts
+            case 'weekly_reflection_with_goal':
+                const weeklyChecklistSummary = data.recentChecklists.map(c => {
+                    const totalTasks = c.tasks.length;
+                    const completedTasks = c.tasks.filter(t => t.completed).length;
+                    return `Date: ${moment(c.date).tz(TIMEZONE).format('MM/DD')}, Tasks: ${completedTasks}/${totalTasks}`;
+                }).join('\n');
+                const weeklyChatsSummary = data.recentChats.map(c => `User: ${c.text}`).join('\n');
 
+                userInput = `It's time for a weekly reflection. Here is a summary of the user's check-ins and chats from this past week:\n\n` +
+                            `Weekly Check-ins:\n${weeklyChecklistSummary}\n\n` +
+                            `Recent Chats:\n${weeklyChatsSummary}\n\n` +
+                            `Based on this data, provide a weekly reflection message. Start by celebrating their achievements, then gently point out any weaknesses (e.g., missed days), and offer one actionable piece of advice for the upcoming week. Your output must be a single message in a JSON object.`;
+                systemPromptContent = systemPromptHeader + `\n\n` +
+                    `Respond in this JSON format:\n` +
+                    `{ "intent": "weekly_reflection", "message": "Your sassy, direct reflection message here." }`;
+                break;
+
+            case 'monthly_reflection_with_goal':
+                const monthlyChecklistSummary = data.recentChecklists.map(c => {
+                    const totalTasks = c.tasks.length;
+                    const completedTasks = c.tasks.filter(t => t.completed).length;
+                    return `Date: ${moment(c.date).tz(TIMEZONE).format('MM/DD')}, Tasks: ${completedTasks}/${totalTasks}`;
+                }).join('\n');
+                const monthlyChatsSummary = data.recentChats.map(c => `User: ${c.text}`).join('\n');
+
+                userInput = `It's time for a monthly reflection. Here is a summary of the user's check-ins and chats from this past month:\n\n` +
+                            `Monthly Check-ins:\n${monthlyChecklistSummary}\n\n` +
+                            `Recent Chats:\n${monthlyChatsSummary}\n\n` +
+                            `Analyze the user's performance for the month. Provide a detailed summary of their overall progress, identify recurring strengths and weaknesses, and give a strategic tip for the next month. Your output must be a single message in a JSON object.`;
+                systemPromptContent = systemPromptHeader + `\n\n` +
+                    `Respond in this JSON format:\n` +
+                    `{ "intent": "monthly_reflection", "message": "Your sassy, direct reflection message here." }`;
+                break;
+
+            case 'motivational_message_without_goal':
+                userInput = "The user currently has no goal set. Send a deep, inspiring motivational message that encourages them to find a goal and take the first step towards personal growth. The message should still be in your sassy, direct tone.";
+                systemPromptContent = systemPromptHeader + `\n\n` +
+                    `Respond in this JSON format:\n` +
+                    `{ "intent": "motivational", "message": "Your sassy motivational message here." }`;
+                break;
+            
             case 'general_chat':
             default:
-                userInput = data.userInput || "Hello, let's talk goals!"; // safe fallback
+                userInput = data.userInput || "Hello, let's talk goals!";
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format for general conversations:\n` +
                     `{ "intent": "general", "message": "Provide a short, direct, sassy message." }`;
@@ -61,7 +105,7 @@ ${recent}"`;
         }
 
         if (!userInput || typeof userInput !== 'string') {
-            console.error('Fatal: userInput is not a valid string. Got:', userInput);
+            console.error('Fatal: userInput is not a valid string.');
             return {
                 message: "Listen, I don't care if you just sent a sticker or emoji—let's talk about your goals. What's the plan?",
                 intent: 'general',
@@ -91,39 +135,12 @@ ${recent}"`;
             } else {
                 console.error('Fatal: Fallback JSON extraction failed. Raw:', raw);
                 return {
-                    message: "Listen, I don't care if you just sent a sticker or emoji—let's talk about your goals. What's the plan?",
+                    message: "I am having some technical difficulties. Your goals are still waiting, though.",
                     intent: 'general',
                 };
             }
         }
-
-        const defaultResponse = {
-            intent: 'general',
-            message: "Listen, I don't care if it's just 'hi'—let's talk about your goals. What's the plan?",
-            challenge_message: null,
-            weekly_goal: null,
-            daily_tasks: null
-        };
-
-        let response = { ...defaultResponse };
-
-        if (structured.intent === 'create_checklist') {
-            response.intent = 'create_checklist';
-            response.challenge_message = structured.challenge_message || null;
-            response.weekly_goal = structured.weekly_goal || null;
-            response.daily_tasks = Array.isArray(structured.daily_tasks)
-                ? structured.daily_tasks.map(task => ({ text: task.text || task.task || "Unnamed Task" }))
-                : [];
-        } else if (structured.intent === 'give_advice') {
-            response.intent = 'give_advice';
-            response.message = structured.message || response.message;
-        } else {
-            response.intent = structured.intent || 'general';
-            response.message = structured.message || (Array.isArray(structured.messages) ? structured.messages.join('\n') : structured.messages) || response.message;
-        }
-
-        return response;
-
+        return structured;
     } catch (error) {
         console.error('OpenAI error:', error);
         return {
