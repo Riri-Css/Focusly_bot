@@ -162,7 +162,7 @@ async function handleMessage(bot, msg) {
 
         // NEW: Handle the admin command to manually grant subscription access
         if (command === '/allowaccess') {
-            if (chatId.toString() !== ADMIN_TELEGRAM_ID) {
+            if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
                 return sendTelegramMessage(bot, chatId, "🚫 You are not authorized to use this command.");
             }
 
