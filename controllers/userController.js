@@ -1,5 +1,5 @@
+// File: src/controllers/userController.js - FINAL VERSION
 
-// File: src/controllers/userController.js - UPDATED VERSION
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
@@ -26,7 +26,8 @@ async function getOrCreateUser(telegramId) {
                 subscriptionStatus: 'inactive',
                 subscriptionPlan: 'free',
                 aiUsage: [], 
-                onboardingStep: 'start',
+                // CORRECTED: 'start' is a command, 'awaiting_goal' is the state
+                onboardingStep: 'awaiting_goal',
                 recentChats: [],
                 importantMemories: [],
             });
@@ -44,8 +45,9 @@ async function getOrCreateUser(telegramId) {
         if (!user.importantMemories) {
             user.importantMemories = [];
         }
+        // Corrected: If onboardingStep is missing, set to a valid value
         if (!user.onboardingStep) {
-            user.onboardingStep = 'start';
+            user.onboardingStep = 'awaiting_goal';
         }
         if (!user.goalMemory) {
             user.goalMemory = { text: null };
