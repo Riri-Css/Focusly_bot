@@ -1,4 +1,4 @@
-// File: src/controllers/userController.js - FINAL VERSION
+// File: src/controllers/userController.js - FINAL UPDATED VERSION
 
 const User = require('../models/user');
 const moment = require('moment-timezone');
@@ -26,14 +26,22 @@ async function getOrCreateUser(telegramId) {
                 subscriptionStatus: 'inactive',
                 subscriptionPlan: 'free',
                 aiUsage: [], 
-                // CORRECTED: 'start' is a command, 'awaiting_goal' is the state
-                onboardingStep: 'awaiting_goal',
+                onboardingStep: 'awaiting_goal', // <-- CORRECTED: New users are now in the 'awaiting_goal' state.
                 recentChats: [],
                 importantMemories: [],
             });
             await user.save();
             console.log(`New user created: ${telegramId}`);
         } else {
+            // --- TEMPORARY PATCH START ---
+            // This checks for and corrects the invalid 'start' value for existing users.
+            if (user.onboardingStep === 'start') {
+                user.onboardingStep = 'awaiting_goal';
+                await user.save();
+                console.log(`✅ Corrected onboardingStep for user ${telegramId}.`);
+            }
+            // --- TEMPORARY PATCH END ---
+
             if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
                 user.aiUsage = [];
                 await user.save();
