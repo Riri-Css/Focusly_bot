@@ -5,6 +5,19 @@ const { getModelForUser } = require('../utils/subscriptionUtils');
 const moment = require('moment-timezone');
 const TIMEZONE = 'Africa/Lagos';
 
+// NEW: Helper function to check if the model supports JSON mode
+function supportsJsonMode(model) {
+    const supportedModels = [
+        'gpt-4o', 
+        'gpt-4-turbo', 
+        'gpt-3.5-turbo-1106', 
+        'gpt-3.5-turbo-0125', 
+        'gpt-4' // Add gpt-4 to the list as it supports this feature
+    ];
+    // Check if the model starts with any of the supported prefixes for future-proofing
+    return supportedModels.some(supported => model.startsWith(supported));
+}
+
 async function getSmartResponse(user, promptType, data = {}, strictMode = false) {
     try {
         const userModel = getModelForUser(user);
@@ -112,14 +125,21 @@ ${recent}"`;
             };
         }
 
-        const completion = await openai.chat.completions.create({
+        // NEW: Create a payload object to conditionally add parameters
+        const payload = {
             model: userModel,
-            response_format: { "type": "json_object" },
             messages: [
                 { role: 'system', content: systemPromptContent },
                 { role: 'user', content: userInput }
             ],
-        });
+        };
+
+        // NEW: Only add the response_format if the model supports it
+        if (supportsJsonMode(userModel)) {
+            payload.response_format = { "type": "json_object" };
+        }
+
+        const completion = await openai.chat.completions.create(payload);
 
         const raw = completion.choices[0].message.content.trim();
         let structured;
