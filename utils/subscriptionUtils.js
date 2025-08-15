@@ -24,7 +24,7 @@ const PLAN_DETAILS = {
     'premium': {
         price: 150000, // ₦1,500 in kobo
         aiUsageLimit: null, // Unlimited
-        model: 'gpt-4',
+        model: 'gpt-4o',
         paystackPlanCode: 'PLN_1yusx7cuhiuw0vc' // ⬅️ Replace with your actual Premium plan code
     }
 };
