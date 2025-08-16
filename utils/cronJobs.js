@@ -29,7 +29,7 @@ function startDailyJobs(bot) {
     }, { timezone: TIMEZONE });
 
     // ⏰ 8 AM Daily Checklist Generator
-    cron.schedule('* 8 * * *', async () => {
+    cron.schedule('0 8 * * *', async () => {
         console.log('⏰ Running 8 AM daily checklist generator...');
         try {
             const users = await User.find({});
@@ -48,7 +48,7 @@ function startDailyJobs(bot) {
                         const motivationalMessage = `
 Good morning! ☀️ Before we can start smashing some goals, you need to set one!
 
-A goal without a plan is just a wish. Let's make a plan. Use the command /setgoal to tell me what you want to achieve this week, and I'll help you break it down into actionable steps.
+A goal without a plan is just a wish. Let's make a plan. Use the command /setgoal to tell me what you want to achieve, and I'll help you break it down into actionable steps.
 `;
                         await bot.sendMessage(user.telegramId, motivationalMessage);
                         console.log(`✅ Sent motivational message to user ${user.telegramId} (no goal set)`);
