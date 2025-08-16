@@ -123,7 +123,7 @@ function delay(ms) {
 async function checkAIUsageAndGetModel(user, chatId, bot) {
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
-        await sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset.");
+        await sendTelegramMessage(bot, chatId, "⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset. Type /subscription to see available plans.");
         return null;
     }
     const model = user.gptVersion; // Use the gptVersion from the user object
