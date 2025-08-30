@@ -1,5 +1,6 @@
 // models/MiniGoal.js
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
+
 
 const miniGoalSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
