@@ -151,7 +151,7 @@ async function handleDailyCheckinReset(user) {
         console.error("User object is null, cannot handle daily check-in.");
         return;
     }
-    
+
     try {
         const now = moment().tz(TIMEZONE);
         const todayStart = now.clone().startOf('day');
@@ -161,6 +161,7 @@ async function handleDailyCheckinReset(user) {
             const isYesterday = lastCheckinMoment.isSame(todayStart.clone().subtract(1, 'day'), 'day');
             const isToday = lastCheckinMoment.isSame(todayStart, 'day');
             
+            // ✅ Fix: only reset if last check-in was before yesterday
             if (!isYesterday && !isToday) {
                 console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
                 user.streak = 0;
@@ -269,29 +270,37 @@ async function submitCheckin(user, checklistId) {
         if (!checklist) {
             return null;
         }
-        
+
         if (checklist.checkedIn) {
-            return user; // Already checked in, do nothing
+            return user; // Already checked in today
         }
 
         const todayStart = moment().tz(TIMEZONE).startOf('day');
-        const yesterdayStart = todayStart.clone().subtract(1, 'day');
-        
-        const lastCheckinDate = user.lastCheckinDate ? moment(user.lastCheckinDate).tz(TIMEZONE).startOf('day') : null;
-        
-        // Check if the last check-in was yesterday
-        if (lastCheckinDate && lastCheckinDate.isSame(yesterdayStart, 'day')) {
-            user.streak = (user.streak || 0) + 1;
-        } else if (lastCheckinDate && lastCheckinDate.isSame(todayStart, 'day')) {
-            // User already checked in today, do nothing. This is a double check.
-        } else {
-            // Missed a day or this is the first check-in
+        const lastCheckinDate = user.lastCheckinDate
+            ? moment(user.lastCheckinDate).tz(TIMEZONE).startOf('day')
+            : null;
+
+        if (!lastCheckinDate) {
+            // First check-in ever
             user.streak = 1;
+        } else {
+            const diff = todayStart.diff(lastCheckinDate, 'days');
+
+            if (diff === 0) {
+                // Already checked in today
+                return user;
+            } else if (diff === 1) {
+                // Consecutive day → increment streak
+                user.streak = (user.streak || 0) + 1;
+            } else {
+                // Missed at least one day → reset streak
+                user.streak = 1;
+            }
         }
-        
+
         checklist.checkedIn = true;
         user.lastCheckinDate = todayStart.toDate();
-        
+
         await user.save();
         return user;
     } catch (error) {

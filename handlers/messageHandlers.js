@@ -13,6 +13,8 @@ const { sendSubscriptionOptions } = require('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { updateSubscription } = require('../utils/adminUtils');
 const moment = require('moment-timezone');
+const miniGoal = require('../models/miniGoal');
+const User = require('../models/user'); // Ensure your User model is imported
 
 const TIMEZONE = 'Africa/Lagos';
 const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
@@ -158,31 +160,116 @@ async function handleMessage(bot, msg) {
         let user = await getOrCreateUser(telegramId);
         await handleDailyCheckinReset(user);
 
+        // NEW: Check for a pending goal edit first
+        if (user.pendingAction && user.pendingAction.type === 'editGoal') {
+            const goalId = user.pendingAction.goalId;
+            const reminderRegex = /(.+?) at (\d{1,2}(?::\d{2})?\s?(am|pm)?)/i;
+            const match = reminderRegex.exec(userInput);
+
+            if (match) {
+                const task = match[1];
+                const timeString = match[2];
+                const reminderTime = moment.tz(timeString, ["hA", "h:mmA"], TIMEZONE);
+
+                if (!reminderTime.isValid()) {
+                    await sendTelegramMessage(bot, chatId, `⚠️ I couldn’t understand the new time. Please use a format like *2pm* or *14:00*. Please try again.`);
+                    return;
+                }
+
+                const updatedGoal = await miniGoal.findByIdAndUpdate(goalId, { 
+                    text: task, 
+                    time: reminderTime.toDate() 
+                }, { new: true });
+
+                if (updatedGoal) {
+                    user.pendingAction = null; // Clear the pending action
+                    await user.save();
+                    await sendTelegramMessage(bot, chatId, `✅ Your mini-goal has been updated to *${task}* at ${reminderTime.format("h:mm A")}.`);
+                } else {
+                    await sendTelegramMessage(bot, chatId, "❌ The goal you were trying to edit was not found.");
+                }
+            } else {
+                await sendTelegramMessage(bot, chatId, "❌ That's not a valid format. Please provide the new task and time, for example: 'finish my report at 4pm'.");
+            }
+            return;
+        }
+
         const command = userInput.toLowerCase().split(' ')[0];
 
-        // NEW: Handle the admin command to manually grant subscription access
+        // --- Mini Goal / Reminder Detection ---
+        const reminderRegex = /remind me to (.+?) at (\d{1,2}(?::\d{2})?\s?(am|pm)?)/i;
+        const vagueReminderRegex = /remind me to (.+?) (this|tomorrow)?\s?(morning|afternoon|evening|night)?/i;
+
+        let reminderMatch = reminderRegex.exec(userInput);
+        let vagueMatch = vagueReminderRegex.exec(userInput);
+
+        if (reminderMatch) {
+            const task = reminderMatch[1];
+            const timeString = reminderMatch[2];
+            const reminderTime = moment.tz(timeString, ["hA", "h:mmA"], TIMEZONE);
+
+            if (!reminderTime.isValid()) {
+                await sendTelegramMessage(bot, chatId, `⚠️ I couldn’t understand the time. Please use a format like *2pm* or *14:00*.`);
+                return;
+            }
+
+            const newReminder = new miniGoal({
+                userId: user._id,
+                telegramId: user.telegramId,
+                text: task,
+                time: reminderTime.toDate()
+            });
+
+            await newReminder.save();
+            await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${reminderTime.format("h:mm A")}.`);
+            return;
+        }
+
+        if (vagueMatch) {
+            const task = vagueMatch[1];
+            user.pendingReminder = { task }; // store temporarily in user object
+            await user.save();
+            await sendTelegramMessage(bot, chatId, `⏰ What exact time should I remind you to *${task}*?`);
+            return;
+        }
+
+        // Handle user response to pending vague reminder
+        if (user.pendingReminder && moment(userInput, ["hA", "h:mmA"], true).isValid()) {
+            const reminderTime = moment.tz(userInput, ["hA", "h:mmA"], TIMEZONE);
+            const { task } = user.pendingReminder;
+
+            const newReminder = new miniGoal({
+                userId: user._id,
+                telegramId: user.telegramId,
+                text: task,
+                time: reminderTime.toDate()
+            });
+
+            await newReminder.save();
+
+            user.pendingReminder = null;
+            await user.save();
+
+            await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${reminderTime.format("h:mm A")}.`);
+            return;
+        }
+
+        // --- Handle commands ---
         if (command === '/allowaccess') {
             if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
                 return sendTelegramMessage(bot, chatId, "🚫 You are not authorized to use this command.");
             }
-
             const parts = userInput.split(' ');
             if (parts.length !== 3) {
                 return sendTelegramMessage(bot, chatId, "Usage: /allowaccess <telegramId> <plan>");
             }
-
             const targetTelegramId = parts[1];
             const plan = parts[2].toLowerCase();
-
             if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
                 try {
                     const updatedUser = await updateSubscription(targetTelegramId, plan);
-                    
                     if (updatedUser) {
-                        // Send confirmation message to the admin
                         await sendTelegramMessage(bot, chatId, `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`);
-                        
-                        // Send congratulatory message to the user
                         await sendTelegramMessage(bot, updatedUser.telegramId, 
                             `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
                         );
@@ -216,7 +303,6 @@ async function handleMessage(bot, msg) {
             if (user.onboardingStep === 'awaiting_goal') {
                 return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
             } else if (user.onboardingStep !== 'onboarded') {
-                // Corrected line: 'start' is a command, 'awaiting_goal' is the state
                 user.onboardingStep = 'awaiting_goal';
                 await user.save();
                 return sendTelegramMessage(bot, chatId, `Hi ${msg.from.first_name}! 👋 Welcome to Focusly. Let's start with your first weekly goal. What's one thing you want to achieve this week?`);
@@ -260,14 +346,12 @@ async function handleMessage(bot, msg) {
                 if (!model) {
                     return;
                 }
-                
                 const aiResponse = await getSmartResponse(user, 'create_checklist', { 
                     goalMemory: user.goalMemory
                 });
 
                 if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                     const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-
                     const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                     const keyboard = createChecklistKeyboard(newChecklist);
                     await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
@@ -289,7 +373,7 @@ async function handleMessage(bot, msg) {
             }
             return;
         }
-        
+
         if (user && user.onboardingStep === 'awaiting_goal') {
             if (userInput && userInput.length > 5) {
                 user.goalMemory.text = userInput;
@@ -300,7 +384,8 @@ async function handleMessage(bot, msg) {
                 return sendTelegramMessage(bot, chatId, "Please provide a more detailed goal. What's one thing you want to achieve this week?");
             }
         }
-
+        
+        // --- NEW: AI-powered conversational intent handling ---
         const model = await checkAIUsageAndGetModel(user, chatId, bot);
         if (!model) {
             return;
@@ -308,17 +393,60 @@ async function handleMessage(bot, msg) {
 
         await addRecentChat(user, userInput);
         
-        const aiResponse = await getSmartResponse(user, 'general_chat', { userInput: userInput });
+        const aiResponse = await getSmartResponse(user, 'conversational_intent', { userInput: userInput });
 
-        if (aiResponse.intent === 'create_checklist') {
+        if (aiResponse.intent === 'list_mini_goals') {
+            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
+            if (userGoals.length === 0) {
+                return sendTelegramMessage(bot, chatId, "You don't have any mini-goals set yet. To set one, just say 'remind me to [task] at [time]'.");
+            }
+
+            let messageText = '📝 **Your Mini-Goals:**\n\n';
+            for (const [index, goal] of userGoals.entries()) {
+                const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
+                const goalText = goal.text;
+                messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n\n`;
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '✏️ Edit', callback_data: `editGoal|${goal._id}` },
+                            { text: '🗑️ Delete', callback_data: `deleteGoal|${goal._id}` }
+                        ]
+                    ]
+                };
+                // Send each goal as a separate message with its own buttons
+                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+                messageText = ''; // Reset message text for the next goal
+            }
+            return;
+        } else if (aiResponse.intent === 'list_all_goals') {
+            let messageText = '📝 **Your Goals:**\n\n';
+            if (user.goalMemory && user.goalMemory.text) {
+                messageText += `**Main Goal:**\n*${user.goalMemory.text}*\n\n`;
+            } else {
+                messageText += "You haven't set a main goal yet. Use `/start` to set one.\n\n";
+            }
+            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
+            if (userGoals.length > 0) {
+                messageText += `**Mini-Goals:**\n`;
+                for (const [index, goal] of userGoals.entries()) {
+                    const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
+                    const goalText = goal.text;
+                    messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n`;
+                }
+            } else {
+                messageText += "You don't have any mini-goals yet. You can ask me to remind you to do something at a specific time.\n";
+            }
+            await sendTelegramMessage(bot, chatId, messageText);
+            return;
+        } else if (aiResponse.intent === 'create_checklist') {
             if (aiResponse.challenge_message) {
                 await sendTelegramMessage(bot, chatId, aiResponse.challenge_message);
                 await delay(1500);
             }
-            
             if (aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                 const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                
                 const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
@@ -330,9 +458,8 @@ async function handleMessage(bot, msg) {
             await sendTelegramMessage(bot, chatId, aiResponse.message);
             await trackAIUsage(user, 'general');
         } else {
-            await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that command. Please focus on your current goal and use the /checkin command when you're ready.");
+            await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that. Please focus on your current goal and use the /checkin command when you're ready.");
         }
-        
     } catch (error) {
         console.error("❌ Error handling message:", error);
         await sendTelegramMessage(bot, chatId, "Something went wrong while processing your message. Please try again.");

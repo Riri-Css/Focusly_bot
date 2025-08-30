@@ -44,6 +44,7 @@ Your responses must be structured as a JSON object with a specific 'intent' and 
 - **Accountability:** If a user misses 3+ check-ins, activate "Strict Mode." Tone becomes less forgiving.
 - **General Conversation:** Keep non-goal-related conversations brief and to the point.
 - **Output Format:** ALWAYS respond in JSON. Do not include markdown or other prose outside JSON.
+- **Intent Recognition:** You must analyze the user's message and determine their primary intent.
 
 User's Goal: "${goal}"
 ${importantMemory ? '\nImportant Memories:\n' + importantMemory : ''}
@@ -106,6 +107,27 @@ ${recent}"`;
                 systemPromptContent = systemPromptHeader + `\n\n` +
                     `Respond in this JSON format:\n` +
                     `{ "intent": "motivational", "message": "Your sassy motivational message here." }`;
+                break;
+
+            // NEW: Added a new case for handling conversational intent for listing goals.
+            // This is a special case. The 'userInput' is not used for a specific prompt,
+            // but for the AI to classify the user's intention based on the provided text.
+            case 'conversational_intent':
+                userInput = data.userInput || "No input provided";
+                systemPromptContent = systemPromptHeader + `\n\n` +
+                    `Based on the user's message, classify their primary intent from this list. ONLY respond with one of the provided JSON objects.
+                    
+                    **Intent List:**
+                    1. **list_mini_goals**: For queries like "how many mini goals do i have", "list my reminders", or "show me my mini goals".
+                    2. **list_all_goals**: For queries like "how many goals do i have" or "show me all my goals". This includes the main goal and mini-goals.
+                    3. **general**: If the message doesn't fit any other category.
+
+                    **Response Format:**
+                    - If intent is 'list_mini_goals': { "intent": "list_mini_goals" }
+                    - If intent is 'list_all_goals': { "intent": "list_all_goals" }
+                    - If intent is 'general': { "intent": "general", "message": "Your sassy, direct message about a different topic." }
+                    
+                    Do not generate any messages for 'list_mini_goals' or 'list_all_goals'. Just return the intent.`;
                 break;
             
             case 'general_chat':

@@ -6,9 +6,43 @@ const { sendTelegramMessage } = require('../handlers/messageHandlers');
 const { getSmartResponse } = require('./getSmartResponse'); 
 const { createAndSaveChecklist, getChecklistByDate } = require('../controllers/userController'); 
 const { createChecklistMessage, createChecklistKeyboard } = require('../handlers/messageHandlers'); 
+const MiniGoal = require('../models/miniGoal');
+
 
 const TIMEZONE = 'Africa/Lagos'; 
 function startDailyJobs(bot) { 
+        // ⏰ Mini-goal Reminders (every minute)
+    cron.schedule('* * * * *', async () => {
+        console.log('⏰ Checking mini-goal reminders...');
+        try {
+            const now = new Date();
+
+            // Find due reminders
+            const dueGoals = await MiniGoal.find({
+                remindAt: { $lte: now },
+                sent: false
+            });
+
+            for (const goal of dueGoals) {
+                try {
+                    await bot.sendMessage(
+                        goal.userId, 
+                        `⏰ Reminder: ${goal.text}`
+                    );
+
+                    goal.sent = true; // mark as delivered
+                    await goal.save();
+                    console.log(`✅ Sent mini-goal reminder to user ${goal.userId}: ${goal.text}`);
+                } catch (err) {
+                    console.error(`❌ Error sending reminder for user ${goal.userId}:`, err.message);
+                }
+            }
+        } catch (err) {
+            console.error('❌ Mini-goal reminder cron error:', err.message);
+        }
+    }, { timezone: TIMEZONE });
+
+
     // ⏰ 12:01 AM Daily Reset Job 
     cron.schedule('1 0 * * *', async () => { 
         console.log('⏰ Running daily reset job...'); 

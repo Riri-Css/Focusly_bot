@@ -76,6 +76,21 @@ const userSchema = new mongoose.Schema({
         text: String,
         timestamp: Date,
     }],
+
+    // ⭐ NEW FIELD: Tracks pending actions for conversational flow
+    pendingAction: {
+        type: {
+            type: String,
+            enum: ['editGoal'], // We can add more action types in the future if needed
+            default: null
+        },
+        goalId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'MiniGoal',
+            default: null
+        }
+    },
+    
     // Other fields from your original schema
     timelineFlag: {
         type: String,
