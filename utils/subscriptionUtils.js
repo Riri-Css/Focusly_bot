@@ -17,13 +17,13 @@ const PLAN_DETAILS = {
     },
     'basic': {
         price: 100000, // ₦1,000 in kobo
-        aiUsageLimit: { general: 30, checklist: 30 },
+        aiUsageLimit: { general: 20, checklist: 35 },
         model: 'gpt-3.5-turbo',
         paystackPlanCode: 'PLN_i11fd0j98ycrcgd' // ⬅️ Replace with your actual Basic plan code
     },
     'premium': {
-        price: 150000, // ₦1,500 in kobo
-        aiUsageLimit: null, // Unlimited
+        price: 200000, // ₦2,000 in kobo
+        aiUsageLimit: { general: 80, checklist: 35 }, // Unlimited
         model: 'gpt-4o',
         paystackPlanCode: 'PLN_1yusx7cuhiuw0vc' // ⬅️ Replace with your actual Premium plan code
     }
