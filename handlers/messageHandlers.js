@@ -11,7 +11,7 @@ const {
 
 const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram');
-const { getSmartResponse } = require('../utils/getSmartResponse');
+const { getSmartResponse } = require = ('../utils/getSmartResponse');
 const { updateSubscription } = require('../utils/adminUtils');
 
 const moment = require('moment-timezone');
@@ -89,7 +89,7 @@ function createFinalCheckinMessage(user, checklist) {
     const totalTasksCount = checklist.tasks.length;
     const completionPercentage =
         totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
-    const streakCount = user.streak || 0;
+    const streakCount = user.currentStreak || 0; // Use currentStreak from user model
 
     let message = `**Check-in Complete!** 🎉\n\n`;
 
@@ -146,9 +146,8 @@ async function checkAIUsageAndGetModel(user, chatId, bot) {
 async function handleReminder(user, userInput, bot, chatId) {
     // 1) If user previously gave a task and we're waiting for the time
     if (user.pendingReminder && user.pendingReminder.waitingForTime) {
-        const parsedTime = chrono.parseDate(userInput, { timezone: TIMEZONE });
+        const parsedTime = chrono.parseDate(userInput, new Date(), { timezone: TIMEZONE }); // FIX: Added new Date()
 
-        // ✅ FIX: Added check for time being in the past.
         if (!parsedTime || parsedTime < new Date()) {
             await sendTelegramMessage(
                 bot,
@@ -182,18 +181,16 @@ async function handleReminder(user, userInput, bot, chatId) {
 
     // 2) Detect a new "remind ..." message (covers "remind me to", "I want you to remind me", etc.)
     if (/remind/i.test(userInput)) {
-        // ✅ FIX: Switched to chrono.parse() to get the full parsed result for better text stripping
-        const parsedResult = chrono.parse(userInput, { timezone: TIMEZONE });
+        const parsedResult = chrono.parse(userInput, new Date(), { timezone: TIMEZONE }); // FIX: Added new Date()
 
         if (parsedResult && parsedResult.length > 0) {
             const parsedTime = parsedResult[0].start.date();
 
-            // ✅ FIX: Use the parsed result to accurately remove the time component from the task.
             const task = userInput
                 .replace(/remind( me)?( to)?/i, '')
                 .replace(parsedResult[0].text, '')
                 .trim();
-                                
+
             if (!task || parsedTime < new Date()) {
                 await sendTelegramMessage(
                     bot,
@@ -240,6 +237,43 @@ async function handleReminder(user, userInput, bot, chatId) {
 }
 
 /**
+ * Consolidate goal listing logic.
+ * This is a new helper function to avoid code duplication.
+ */
+async function listUserGoals(bot, user, chatId) {
+    const userGoals = await MiniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
+    let messageText = '📝 **Your Goals:**\n\n';
+
+    if (user.goalMemory?.text) {
+        messageText += `**Main Goal:**\n*${user.goalMemory.text}*\n\n`;
+    } else {
+        messageText += "You haven't set a main goal yet. Use `/setgoal` to define one.\n\n";
+    }
+
+    await sendTelegramMessage(bot, chatId, messageText);
+
+    if (userGoals.length > 0) {
+        await sendTelegramMessage(bot, chatId, '**Mini-Goals:**');
+        for (const goal of userGoals) {
+            const formattedTime = moment(goal.time).tz(TIMEZONE).format('h:mm A');
+            const goalMessageText = `*${goal.text}* at ${formattedTime}`;
+            const keyboard = {
+                inline_keyboard: [
+                    [
+                        { text: '✏️ Edit', callback_data: `editGoal|${goal._id}` },
+                        { text: '🗑️ Delete', callback_data: `deleteGoal|${goal._id}` },
+                    ],
+                ],
+            };
+            await sendTelegramMessage(bot, chatId, goalMessageText, { reply_markup: keyboard });
+        }
+    } else {
+        await sendTelegramMessage(bot, chatId, "You don't have any mini-goals yet. To set one, just say 'remind me to [task] at [time]'.");
+    }
+}
+
+
+/**
  * Main message handler
  */
 async function handleMessage(bot, msg) {
@@ -265,7 +299,7 @@ async function handleMessage(bot, msg) {
         const user = await getOrCreateUser(telegramId);
         await handleDailyCheckinReset(user);
 
-        // ✅ FIX: The reminder handler must run first. It's the most time-sensitive and common conversational flow.
+        // Handle reminder/mini-goal creation first
         const reminderHandled = await handleReminder(user, userInput, bot, chatId);
         if (reminderHandled) {
             return;
@@ -274,9 +308,7 @@ async function handleMessage(bot, msg) {
         // --- Edit mini-goal flow (user previously tapped "Edit") ---
         if (user.pendingAction && user.pendingAction.type === 'editGoal') {
             const goalId = user.pendingAction.goalId;
-
-            // Use chrono to parse both text and time for a more robust update.
-            const parsedResult = chrono.parse(userInput, { timezone: TIMEZONE });
+            const parsedResult = chrono.parse(userInput, new Date(), { timezone: TIMEZONE }); // FIX: Added new Date()
             const parsedTime = parsedResult && parsedResult.length > 0 ? parsedResult[0].start.date() : null;
             const newText = parsedResult && parsedResult.length > 0 ? userInput.replace(parsedResult[0].text, '').trim() : userInput;
 
@@ -431,8 +463,7 @@ async function handleMessage(bot, msg) {
                     const finalMessage = createFinalCheckinMessage(user, checklist);
                     return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
-                    const messageText =
-                        `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` +
+                    const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` +
                         createChecklistMessage(checklist);
                     const keyboard = createChecklistKeyboard(checklist);
                     return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
@@ -447,8 +478,7 @@ async function handleMessage(bot, msg) {
 
                 if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                     const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                    const messageText =
-                        `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
+                    const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
                         createChecklistMessage(newChecklist);
                     const keyboard = createChecklistKeyboard(newChecklist);
                     await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
@@ -461,6 +491,29 @@ async function handleMessage(bot, msg) {
                     );
                 }
             }
+            return;
+        }
+        
+        if (command === '/setgoal') {
+            const newGoalText = userInput.replace(/^\s*\/\w+\s*/, '').trim();
+            if (!newGoalText) {
+                return sendTelegramMessage(
+                    bot,
+                    chatId,
+                    "Please provide a goal to set. Example: `/setgoal Learn to code in Python`"
+                );
+            }
+            user.goalMemory = {
+                text: newGoalText,
+                lastUpdated: new Date()
+            };
+            user.onboardingStep = 'onboarded';
+            await user.save();
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                `✅ Got it! I've set your weekly goal to: *${newGoalText}*. I'll help you break it down into daily tasks.`
+            );
             return;
         }
 
@@ -478,11 +531,19 @@ async function handleMessage(bot, msg) {
             }
             return;
         }
+        
+        if (command === '/goals') {
+            await listUserGoals(bot, user, chatId);
+            return;
+        }
 
         // Onboarding goal capture
         if (user && user.onboardingStep === 'awaiting_goal') {
             if (userInput && userInput.length > 5) {
-                user.goalMemory.text = userInput;
+                user.goalMemory = {
+                    text: userInput,
+                    lastUpdated: new Date()
+                };
                 user.onboardingStep = 'onboarded';
                 await user.save();
                 return sendTelegramMessage(
@@ -493,7 +554,7 @@ async function handleMessage(bot, msg) {
             } else {
                 return sendTelegramMessage(
                     bot,
-                    chatId,
+                    chat-id,
                     "Please provide a more detailed goal. What's one thing you want to achieve this week?"
                 );
             }
@@ -508,53 +569,9 @@ async function handleMessage(bot, msg) {
         const aiResponse = await getSmartResponse(user, 'conversational_intent', { userInput });
 
         if (aiResponse.intent === 'list_mini_goals') {
-            const userGoals = await MiniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
-            if (userGoals.length === 0) {
-                return sendTelegramMessage(
-                    bot,
-                    chatId,
-                    "You don't have any mini-goals set yet. To set one, just say 'remind me to [task] at [time]'."
-                );
-            }
-
-            await sendTelegramMessage(bot, chatId, '📝 **Your Mini-Goals:**');
-
-            for (const goal of userGoals) {
-                const formattedTime = moment(goal.time).tz(TIMEZONE).format('h:mm A');
-                const messageText = `*${goal.text}* at ${formattedTime}`;
-
-                const keyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '✏️ Edit', callback_data: `editGoal|${goal._id}` },
-                            { text: '🗑️ Delete', callback_data: `deleteGoal|${goal._id}` },
-                        ],
-                    ],
-                };
-
-                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
-            }
-            return;
-        } else if (aiResponse.intent === 'list_all_goals') {
-            let messageText = '📝 **Your Goals:**\n\n';
-            if (user.goalMemory && user.goalMemory.text) {
-                messageText += `**Main Goal:**\n*${user.goalMemory.text}*\n\n`;
-            } else {
-                messageText += "You haven't set a main goal yet. Use `/start` to set one.\n\n";
-            }
-            const userGoals = await MiniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
-            if (userGoals.length > 0) {
-                messageText += `**Mini-Goals:**\n`;
-                for (const [index, goal] of userGoals.entries()) {
-                    const formattedTime = moment(goal.time).tz(TIMEZONE).format('h:mm A');
-                    const goalText = goal.text;
-                    messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n`;
-                }
-            } else {
-                messageText +=
-                    "You don't have any mini-goals yet. You can ask me to remind you to do something at a specific time.\n";
-            }
-            await sendTelegramMessage(bot, chatId, messageText);
+            // Now, we simply call the new helper function
+            await listUserGoals(bot, user, chatId);
+            await trackAIUsage(user, 'general');
             return;
         } else if (aiResponse.intent === 'create_checklist') {
             if (aiResponse.challenge_message) {
@@ -563,8 +580,7 @@ async function handleMessage(bot, msg) {
             }
             if (aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                 const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                const messageText =
-                    `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
+                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
                     createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });

@@ -9,9 +9,9 @@ const generatePaystackLink = (telegramId, plan) => {
   let base = "";
 
   if (plan === "Basic") {
-    base = "https://paystack.com/pay/focusly-basic"; // 🔁 Replace with your real Basic plan link
+    base = "https://paystack.com/pay/focusly-basic"; 
   } else if (plan === "Premium") {
-    base = "https://paystack.com/pay/focusly-premium"; // 🔁 Replace with your real Premium plan link
+    base = "https://paystack.com/pay/focusly-premium"; 
   }
 
   return `${base}?metadata=${encodeURIComponent(JSON.stringify(metadata))}`;

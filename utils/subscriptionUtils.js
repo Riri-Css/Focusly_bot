@@ -12,7 +12,7 @@ const openai = new OpenAI({
 const PLAN_DETAILS = {
     'free': {
         price: 0,
-        aiUsageLimit: { general: 3, checklist: 1 },
+        aiUsageLimit: { general: 10, checklist: 1 },
         model: 'gpt-3.5-turbo'
     },
     'basic': {
