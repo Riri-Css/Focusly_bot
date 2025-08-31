@@ -196,63 +196,71 @@ async function handleMessage(bot, msg) {
 
         const command = userInput.toLowerCase().split(' ')[0];
 
-        // --- Mini Goal / Reminder Detection ---
-        const reminderRegex = /remind me to (.+?) at (\d{1,2}(?::\d{2})?\s?(am|pm)?)/i;
-        const vagueReminderRegex = /remind me to (.+?) (this|tomorrow)?\s?(morning|afternoon|evening|night)?/i;
+        const chrono = require('chrono-node'); // 👈 add at the top
 
-        let reminderMatch = reminderRegex.exec(userInput);
-        let vagueMatch = vagueReminderRegex.exec(userInput);
+// --- Mini Goal / Reminder Detection ---
+const reminderRegex = /remind me to (.+?) at (.+)/i;
+const vagueReminderRegex = /remind me to (.+?) (this|tomorrow)?\s?(morning|afternoon|evening|night)?/i;
 
-        if (reminderMatch) {
-            const task = reminderMatch[1];
-            const timeString = reminderMatch[2];
-            const reminderTime = moment.tz(timeString, ["hA", "h:mmA"], TIMEZONE);
+// If user is in the middle of giving time for a vague reminder
+if (user.pendingReminder && user.pendingReminder.waitingForTime) {
+    const parsedTime = chrono.parseDate(userInput, { timezone: TIMEZONE });
 
-            if (!reminderTime.isValid()) {
-                await sendTelegramMessage(bot, chatId, `⚠️ I couldn’t understand the time. Please use a format like *2pm* or *14:00*.`);
-                return;
-            }
+    if (!parsedTime) {
+        await sendTelegramMessage(bot, chatId, "⚠️ I couldn’t understand that time. Please try again, e.g. *7:30am* or *14:00*.");
+        return;
+    }
 
-            const newReminder = new miniGoal({
-                userId: user._id,
-                telegramId: user.telegramId,
-                text: task,
-                time: reminderTime.toDate()
-            });
+    const { task } = user.pendingReminder;
+    const newReminder = new miniGoal({
+        userId: user._id,
+        telegramId: user.telegramId,
+        text: task,
+        time: parsedTime
+    });
 
-            await newReminder.save();
-            await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${reminderTime.format("h:mm A")}.`);
-            return;
-        }
+    await newReminder.save();
+    user.pendingReminder = null;
+    await user.save();
 
-        if (vagueMatch) {
-            const task = vagueMatch[1];
-            user.pendingReminder = { task }; // store temporarily in user object
-            await user.save();
-            await sendTelegramMessage(bot, chatId, `⏰ What exact time should I remind you to *${task}*?`);
-            return;
-        }
+    await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${moment(parsedTime).tz(TIMEZONE).format("h:mm A")}.`);
+    return;
+}
 
-        // Handle user response to pending vague reminder
-        if (user.pendingReminder && moment(userInput, ["hA", "h:mmA"], true).isValid()) {
-            const reminderTime = moment.tz(userInput, ["hA", "h:mmA"], TIMEZONE);
-            const { task } = user.pendingReminder;
+// Direct reminder with explicit time
+let reminderMatch = reminderRegex.exec(userInput);
+if (reminderMatch) {
+    const task = reminderMatch[1];
+    const timeString = reminderMatch[2];
+    const parsedTime = chrono.parseDate(timeString, { timezone: TIMEZONE });
 
-            const newReminder = new miniGoal({
-                userId: user._id,
-                telegramId: user.telegramId,
-                text: task,
-                time: reminderTime.toDate()
-            });
+    if (!parsedTime) {
+        await sendTelegramMessage(bot, chatId, `⚠️ I couldn’t understand the time. Please use a format like *2pm* or *14:00*.`);
+        return;
+    }
 
-            await newReminder.save();
+    const newReminder = new miniGoal({
+        userId: user._id,
+        telegramId: user.telegramId,
+        text: task,
+        time: parsedTime
+    });
 
-            user.pendingReminder = null;
-            await user.save();
+    await newReminder.save();
+    await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${moment(parsedTime).tz(TIMEZONE).format("h:mm A")}.`);
+    return;
+}
 
-            await sendTelegramMessage(bot, chatId, `✅ Got it! I’ll remind you to *${task}* at ${reminderTime.format("h:mm A")}.`);
-            return;
-        }
+// Vague reminder (morning/afternoon/etc.)
+let vagueMatch = vagueReminderRegex.exec(userInput);
+if (vagueMatch) {
+    const task = vagueMatch[1];
+    user.pendingReminder = { task, waitingForTime: true };
+    await user.save();
+
+    await sendTelegramMessage(bot, chatId, `⏰ What exact time should I remind you to *${task}*?`);
+    return;
+}
 
         // --- Handle commands ---
         if (command === '/allowaccess') {
