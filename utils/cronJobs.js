@@ -17,7 +17,8 @@ function startDailyJobs(bot) {
     cron.schedule('* * * * *', async () => {
         console.log('⏰ Checking for due mini-goals...');
         try {
-            const now = new Date();
+            const now = moment().tz(TIMEZONE).toDate();
+
             // Find mini-goals that are due and haven't been reminded yet
             const dueGoals = await MiniGoal.find({
                 time: { $lte: now },
@@ -49,47 +50,22 @@ function startDailyJobs(bot) {
     cron.schedule('1 0 * * *', async () => {
         console.log('⏰ Running daily reset and streak calculation job...');
         try {
-            const yesterday = moment().tz(TIMEZONE).subtract(1, 'day').startOf('day').toDate();
-
             const users = await User.find({});
             for (const user of users) {
-                // Find yesterday's checklist
-                const yesterdayChecklist = user.checklists.find(c => moment(c.date).isSame(yesterday, 'day'));
+                // Find and reset the last AI usage record
+                const today = moment().tz(TIMEZONE).startOf('day').toDate();
+                user.aiUsage = user.aiUsage.filter(record => moment(record.date).isSameOrAfter(today));
 
-                if (yesterdayChecklist && yesterdayChecklist.checkedIn) {
-                    // User successfully checked in yesterday
-                    const newStreak = (user.currentStreak || 0) + 1;
-                    user.currentStreak = newStreak;
-                    if (newStreak > (user.longestStreak || 0)) {
-                        user.longestStreak = newStreak;
-                    }
-                    console.log(`📈 User ${user.telegramId} continues a streak. New streak: ${newStreak}`);
-                } else {
-                    // User missed a check-in yesterday
-                    if (user.currentStreak > 0) {
-                        console.log(`💔 User ${user.telegramId} missed a check-in. Streak reset.`);
-                    }
-                    user.currentStreak = 0;
-                    user.missedCheckins = (user.missedCheckins || 0) + 1;
-                }
-
-                // AI usage reset for the new day
-                user.aiUsage = user.aiUsage.filter(record => moment(record.date).isSame(moment(), 'day'));
-                if (user.aiUsage.length === 0) {
-                    user.aiUsage.push({
-                        date: new Date(),
-                        generalCount: 0,
-                        checklistCount: 0
-                    });
-                }
-                
-                // Reset hasSubmittedTasksToday and hasCheckedInTonight
+                // Reset hasSubmittedTasksToday and hasCheckedInTonight for the new day
                 user.hasSubmittedTasksToday = false;
                 user.hasCheckedInTonight = false;
 
+                // Daily streaks are now handled by the 'submitCheckin' function
+                // This job is just for clean-up
+                
                 await user.save();
             }
-            console.log(`✅ Completed daily reset and streak calculations for all users.`);
+            console.log(`✅ Completed daily reset for all users.`);
         } catch (err) {
             console.error('❌ 12:01 AM daily reset cron error:', err.message);
         }
@@ -148,10 +124,10 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         console.log('⏰ Running 12 PM reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
         for (const user of users) {
-             if (user.goalMemory) {
-                 await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working on them now and let me know if you need help.");
-                 console.log(`✅ Sent 12 PM reminder to user ${user.telegramId}`);
-             }
+            if (user.goalMemory) {
+                await sendTelegramMessage(bot, user.telegramId, "Hey, just checking in! Have you started working on your tasks? If not, start working on them now and let me know if you need help.");
+                console.log(`✅ Sent 12 PM reminder to user ${user.telegramId}`);
+            }
         }
     }, { timezone: TIMEZONE });
 
@@ -160,10 +136,10 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         console.log('⏰ Running 3 PM progress reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
         for (const user of users) {
-             if (user.goalMemory) {
-                 await sendTelegramMessage(bot, user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
-                 console.log(`✅ Sent 3 PM reminder to user ${user.telegramId}`);
-             }
+            if (user.goalMemory) {
+                await sendTelegramMessage(bot, user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
+                console.log(`✅ Sent 3 PM reminder to user ${user.telegramId}`);
+            }
         }
     }, { timezone: TIMEZONE });
 
@@ -206,11 +182,46 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
                     const totalTasksCount = last7DaysChecklists.reduce((sum, checklist) =>
                         sum + checklist.tasks.length, 0);
 
-                    const reflectionMessage = `
-**Weekly Reflection** ✨
-You've completed **${completedTasksCount}** out of **${totalTasksCount}** tasks this past week!
-Your current check-in streak is **${user.currentStreak || 0} days**. Let's aim to keep it going strong! 💪
-`;
+                    const checkinsCount = last7DaysChecklists.filter(c => c.checkedIn).length;
+                    const missedCheckins = 7 - checkinsCount;
+
+                    let reflectionMessage = "";
+
+                    if (missedCheckins > checkinsCount) {
+                        // Strict tone
+                        reflectionMessage = `
+⚠️ **Weekly Reflection**
+This week you completed **${completedTasksCount}/${totalTasksCount}** tasks,
+but you *missed more check-ins than you made*.  
+
+That’s not good enough if you’re serious about your achievement. Despite all my reminders and text messages, you still came out like this, I'm so disappointed to even be acquainted with you.
+so which means all of my messages, you're just like "what's all these unnecessary messages?" no problem na, i'll still try  my best so at the end of your goal duration, i can say "I TOLD YOU SO!" 
+that's if you still keep up with this attitude but i know there's still room for  change and you're not exempted.
+Here’s what to do next week:
+1. Keep your goals smaller but consistent.  
+2. Check in **every day** — no excuses.  
+3. Hold yourself accountable like it’s a real deadline. 
+4. If there's anywhere you're struggling with, don't hesitate to reach out.
+
+Next week, I expect better discipline. 🚀
+                    `;
+                    } else {
+                        // Encouraging tone
+                        reflectionMessage = `
+✅ **Weekly Reflection**
+This week you completed **${completedTasksCount}/${totalTasksCount}** tasks,
+and checked in more times than you missed.  Damnnn, that's some bold move and I really love that can't believe this is you!!
+Please hold on to whatever strategy helped you stay consistent this week even if it's your Ex.
+
+Great job staying consistent! Keep the momentum:
+1. Build on what worked this week.  
+2. Stretch your goals slightly to challenge yourself.  
+3. Stay consistent — success compounds!  
+
+I’m proud of your discipline. Keep pushing 💪
+                    `;
+                    }
+
                     await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
                     console.log(`✅ Sent weekly reflection to user ${user.telegramId}`);
                 }
@@ -227,27 +238,107 @@ Your current check-in streak is **${user.currentStreak || 0} days**. Let's aim t
             const users = await User.find();
             for (const user of users) {
                 const startOfMonth = moment().tz(TIMEZONE).startOf('month');
-                const thisMonthChecklists = user.checklists.filter(c => moment(c.date).isSameOrAfter(startOfMonth));
-
+                const thisMonthChecklists = user.checklists.filter(c =>
+                    moment(c.date).isSameOrAfter(startOfMonth)
+                );
+                
                 if (thisMonthChecklists.length > 0) {
                     const completedTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.filter(task => task.completed).length, 0);
+                        sum + checklist.tasks.filter(task => task.completed).length, 0
+                    );
                     const totalTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.length, 0);
+                        sum + checklist.tasks.length, 0
+                    );
+                    const totalCheckins = thisMonthChecklists.filter(c => c.checkedIn).length;
+                    const achievements = user.importantMemories.length; // Use importantMemories for 'achievements'
                     
-                    const reflectionMessage = `
-**Monthly Report** 🗓️
-This month, you completed **${completedTasksCount}** out of **${totalTasksCount}** tasks!
-Your longest streak so far is **${user.longestStreak || 0} days**. Great work! 🎉
-`;
+                    // You'll need to define what 'leftToAchieve' means for your bot
+                    // For now, I've set it to the total tasks minus completed tasks
+                    const leftToAchieve = totalTasksCount - completedTasksCount;
+
+                    let reflectionMessage;
+                    if (completedTasksCount === 0) {
+                        reflectionMessage = `
+⚠️ **Monthly Reflection**
+This month you had **${totalCheckins}** check-ins. 
+Honestly? You’ve been ghosting your own goals more than showing up. 
+
+I won’t sugarcoat it: if you keep this same “I’ll do it later” energy, you’ll blink and your **${user.goalMemory?.text || 'goal'}** will still be sitting in drafts while others are living it. 
+The only thing standing between you and your goal is action. The only thing stopping you from achieving **${user.goalMemory?.text || 'your goal'}** is the amount of work and consistency you're willing to put.
+
+But hey — it’s not over yet. You’ve already achieved **${achievements}** things. What’s left? Just **${leftToAchieve}** more steps standing between you and your end goal. 
+
+Next month, no more vibes-only mode: 
+1. Show up **daily** (even on “not in the mood” days). 
+2. Stop waiting for motivation, act first — motivation follows. 
+3. Remember why you even set this goal. This should even be no 1 because that's the only thing that'll keep you going when the drive isn't there anymore. 
+
+This is your wake-up call 🚨 — are you going to prove me wrong, or prove me right?`;
+                    } else {
+                        reflectionMessage = `
+This month you showed up **${totalCheckins}** times. 
+That’s the energy I’m talking about 🔥. 
+
+You’ve already crushed **${achievements}** milestones. What’s left? Just **${leftToAchieve}** more steps standing between you and your **${user.goalMemory?.text || 'goal'}**. 
+
+Your consistency is screaming main-character energy 💅. Keep stacking these wins and by the time your goal duration ends, you’ll look back and be like, “damnnnn, I really did that. Kimon.” 
+
+Next month, let’s push it even harder: 
+1. Lock in your daily streak like your life depends on it. 
+2. Celebrate your small wins, no matter how small, they’re proof you’re unstoppable. 
+3. Double down on discipline, because discipline > vibes. 
+
+Proud of you. Keep proving yourself right 🌟.`;
+                    }
+
                     await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
-                    console.log(`✅ Sent monthly report to user ${user.telegramId}`);
+                    console.log(`✅ Sent monthly reflection to user ${user.telegramId}`);
                 }
             }
         } catch (err) {
             console.error('❌ Monthly reflection cron error:', err.message);
         }
     }, { timezone: TIMEZONE });
+
+    // ⏰ 11:59 PM Daily Check-in Reminder
+    cron.schedule('59 23 * * *', async () => {
+        console.log('⏰ Running 11:59 PM check-in reminder...');
+        try {
+            const users = await User.find({ hasCheckedInTonight: false });
+            for (const user of users) {
+                if (user.goalMemory) {
+                    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+                    const checklist = await getChecklistByDate(user.telegramId, today);
+                    if (checklist && !checklist.checkedIn) {
+                        const message = `
+🚨 Final Reminder! 🚨
+
+It's almost midnight. You have less than an hour to check in for today to keep your streak alive!
+
+Type something in your chat to get started or use the **/checkin** command.
+`;
+                        await sendTelegramMessage(bot, user.telegramId, message);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('❌ 11:59 PM reminder cron error:', err.message);
+        }
+    }, { timezone: TIMEZONE });
+
+    // ⏰ Daily AI Usage Reset (Separate to avoid confusion with streaks)
+    cron.schedule('0 0 * * *', async () => {
+        console.log('⏰ Running daily AI usage reset...');
+        try {
+            await User.updateMany({}, {
+                $pull: { aiUsage: { date: { $lt: moment().tz(TIMEZONE).startOf('day').toDate() } } }
+            });
+            console.log('✅ Daily AI usage reset complete.');
+        } catch (err) {
+            console.error('❌ Daily AI usage reset cron error:', err);
+        }
+    }, { timezone: TIMEZONE });
+
 }
 
 module.exports = { startDailyJobs };
