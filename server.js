@@ -10,7 +10,7 @@ const messageHandlers = require('./handlers/messageHandlers');
 const callbackHandlers = require('./handlers/callbackHandlers'); // <-- IMPORTED
 const subscriptionRoutes = require('./handlers/subscriptionHandlers');
 const { startDailyJobs } = require('./utils/cronJobs');
-const { scheduleCustomReminders } = require('./utils/reminderScheduler');
+const { scheduleCustomReminders } = require('./utils/cronJobs');
 const { startReflectionCrons } = require('./utils/reflectionCron'); // <-- NEW IMPORT
 
 const app = express();
