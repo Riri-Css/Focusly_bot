@@ -1,5 +1,4 @@
 // File: src/controllers/userController.js - FINAL UPDATED VERSION
-
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
@@ -15,6 +14,9 @@ async function getOrCreateUser(telegramId) {
     try {
         let user = await User.findOne({ telegramId: telegramId });
         if (!user) {
+            const now = moment().tz(TIMEZONE);
+            const trialEndDate = now.add(8, 'days').toDate();
+
             user = new User({
                 telegramId: telegramId,
                 streak: 0,
@@ -23,15 +25,16 @@ async function getOrCreateUser(telegramId) {
                 checklists: [],
                 lastCheckinDate: null,
                 consecutiveChecks: 0,
-                subscriptionStatus: 'inactive',
-                subscriptionPlan: 'free',
+                subscriptionStatus: 'trialing',
+                subscriptionPlan: 'free-trial', 
+                subscriptionEndDate: trialEndDate,
                 aiUsage: [], 
-                onboardingStep: 'awaiting_goal', // <-- CORRECTED: New users are now in the 'awaiting_goal' state.
+                onboardingStep: 'awaiting_goal',
                 recentChats: [],
                 importantMemories: [],
             });
             await user.save();
-            console.log(`New user created: ${telegramId}`);
+            console.log(`✅ New user created with 8-day free trial: ${telegramId}`);
         } else {
             // --- TEMPORARY PATCH START ---
             // This checks for and corrects the invalid 'start' value for existing users.
