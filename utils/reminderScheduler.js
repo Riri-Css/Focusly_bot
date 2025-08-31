@@ -1,14 +1,14 @@
-// File: src/utils/reminderScheduler.js - FINAL CORRECTED VERSION
+// File: src/utils/reminderScheduler.js - FIXED WITH MINI GOALS
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const User = require('../models/user');
+const MiniGoal = require('../models/miniGoal');   // import mini-goal model
 const { sendTelegramMessage } = require('./telegram');
 
 const TIMEZONE = 'Africa/Lagos';
 
 function startTaskReminderScheduler(bot) {
     // ⏰ Task Reminders (every minute)
-    // This job checks for any daily checklist tasks with a time that have not been reminded yet.
     cron.schedule('* * * * *', async () => {
         console.log('⏰ Checking daily task reminders...');
         try {
@@ -18,6 +18,7 @@ function startTaskReminderScheduler(bot) {
             const users = await User.find({ onboarded: true });
 
             for (const user of users) {
+                // --- Daily checklist tasks ---
                 const checklist = user.checklists.find(c => moment(c.date).isSame(today, 'day'));
 
                 if (checklist && !checklist.checkedIn) {
@@ -26,7 +27,6 @@ function startTaskReminderScheduler(bot) {
                             const [hour, minute] = task.time.split(':').map(Number);
                             const taskTime = moment().tz(TIMEZONE).set({ hour, minute, second: 0, millisecond: 0 });
 
-                            // Check if the current time is past or equal to the task time
                             if (now.isSameOrAfter(taskTime, 'minute')) {
                                 try {
                                     await sendTelegramMessage(bot, user.telegramId, `⏰ Reminder: ${task.task}`);
@@ -40,9 +40,38 @@ function startTaskReminderScheduler(bot) {
                         }
                     }
                 }
+
+                const miniGoals = await MiniGoal.find({ userId: user._id, reminded: false });
+
+                for (const goal of miniGoals) {
+                    const goalTime = moment(goal.time).tz(TIMEZONE);
+
+                    if (now.isSameOrAfter(goalTime, "minute")) {
+                        try {
+                            await sendTelegramMessage(
+                                bot,
+                                user.telegramId,
+                                `🎯 Mini Goal Reminder: ${goal.text}`
+                            );
+                        } catch (err) {
+                                console.error(
+                                    `❌ Error sending mini-goal reminder for user ${user.telegramId}:`,
+                                    err.message
+                                );
+                            }
+
+                        goal.reminded = true; // mark so it won’t repeat
+                        await goal.save();
+
+                        console.log(`✅ Sent mini-goal reminder to user ${user.telegramId}: ${goal.text}`);
+                    } 
+                }
             }
         } catch (err) {
-            console.error('❌ Task reminder cron error:', err.message);
+            console.error(
+                `❌ Error sending mini-goal reminder for user:`,
+                err.message
+            );
         }
     }, { timezone: TIMEZONE });
 }

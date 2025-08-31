@@ -396,76 +396,76 @@ async function handleMessage(bot, msg) {
         const aiResponse = await getSmartResponse(user, 'conversational_intent', { userInput: userInput });
 
         if (aiResponse.intent === 'list_mini_goals') {
-            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
-            if (userGoals.length === 0) {
-                return sendTelegramMessage(bot, chatId, "You don't have any mini-goals set yet. To set one, just say 'remind me to [task] at [time]'.");
-            }
+            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
+            if (userGoals.length === 0) {
+                return sendTelegramMessage(bot, chatId, "You don't have any mini-goals set yet. To set one, just say 'remind me to [task] at [time]'.");
+            }
 
-            let messageText = '📝 **Your Mini-Goals:**\n\n';
-            for (const [index, goal] of userGoals.entries()) {
-                const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
-                const goalText = goal.text;
-                messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n\n`;
+            // Send an introductory message first to create a clean heading for the list
+            await sendTelegramMessage(bot, chatId, '📝 **Your Mini-Goals:**');
 
-                const keyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '✏️ Edit', callback_data: `editGoal|${goal._id}` },
-                            { text: '🗑️ Delete', callback_data: `deleteGoal|${goal._id}` }
-                        ]
-                    ]
-                };
-                // Send each goal as a separate message with its own buttons
-                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
-                messageText = ''; // Reset message text for the next goal
-            }
-            return;
-        } else if (aiResponse.intent === 'list_all_goals') {
-            let messageText = '📝 **Your Goals:**\n\n';
-            if (user.goalMemory && user.goalMemory.text) {
-                messageText += `**Main Goal:**\n*${user.goalMemory.text}*\n\n`;
-            } else {
-                messageText += "You haven't set a main goal yet. Use `/start` to set one.\n\n";
-            }
-            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
-            if (userGoals.length > 0) {
-                messageText += `**Mini-Goals:**\n`;
-                for (const [index, goal] of userGoals.entries()) {
-                    const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
-                    const goalText = goal.text;
-                    messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n`;
-                }
-            } else {
-                messageText += "You don't have any mini-goals yet. You can ask me to remind you to do something at a specific time.\n";
-            }
-            await sendTelegramMessage(bot, chatId, messageText);
-            return;
-        } else if (aiResponse.intent === 'create_checklist') {
-            if (aiResponse.challenge_message) {
-                await sendTelegramMessage(bot, chatId, aiResponse.challenge_message);
-                await delay(1500);
-            }
-            if (aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
-                const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
-                const keyboard = createChecklistKeyboard(newChecklist);
-                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
-                await trackAIUsage(user, 'checklist');
-            } else {
-                await sendTelegramMessage(bot, chatId, "I couldn't create a checklist based on that. Can you be more specific?");
-            }
-        } else if (aiResponse.message) {
-            await sendTelegramMessage(bot, chatId, aiResponse.message);
-            await trackAIUsage(user, 'general');
-        } else {
-            await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that. Please focus on your current goal and use the /checkin command when you're ready.");
-        }
-    } catch (error) {
-        console.error("❌ Error handling message:", error);
-        await sendTelegramMessage(bot, chatId, "Something went wrong while processing your message. Please try again.");
-    }
+            // Loop through each goal and send it in a separate message with its own buttons
+            for (const goal of userGoals) {
+                const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
+                const messageText = `*${goal.text}* at ${formattedTime}`;
+
+                const keyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '✏️ Edit', callback_data: `editGoal|${goal._id}` },
+                            { text: '🗑️ Delete', callback_data: `deleteGoal|${goal._id}` }
+                        ]
+                    ]
+                };
+
+                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+            }
+            return;
+        } else if (aiResponse.intent === 'list_all_goals') {
+            let messageText = '📝 **Your Goals:**\n\n';
+            if (user.goalMemory && user.goalMemory.text) {
+                messageText += `**Main Goal:**\n*${user.goalMemory.text}*\n\n`;
+            } else {
+                messageText += "You haven't set a main goal yet. Use `/start` to set one.\n\n";
+            }
+            const userGoals = await miniGoal.find({ telegramId: user.telegramId }).sort({ time: 1 });
+            if (userGoals.length > 0) {
+                messageText += `**Mini-Goals:**\n`;
+                for (const [index, goal] of userGoals.entries()) {
+                    const formattedTime = moment(goal.time).tz(TIMEZONE).format("h:mm A");
+                    const goalText = goal.text;
+                    messageText += `${index + 1}. *${goalText}* at ${formattedTime}\n`;
+                }
+            } else {
+                messageText += "You don't have any mini-goals yet. You can ask me to remind you to do something at a specific time.\n";
+            }
+            await sendTelegramMessage(bot, chatId, messageText);
+            return;
+        } else if (aiResponse.intent === 'create_checklist') {
+            if (aiResponse.challenge_message) {
+                await sendTelegramMessage(bot, chatId, aiResponse.challenge_message);
+                await delay(1500);
+            }
+            if (aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
+                const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
+                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
+                const keyboard = createChecklistKeyboard(newChecklist);
+                await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+                await trackAIUsage(user, 'checklist');
+            } else {
+                await sendTelegramMessage(bot, chatId, "I couldn't create a checklist based on that. Can you be more specific?");
+            }
+        } else if (aiResponse.message) {
+            await sendTelegramMessage(bot, chatId, aiResponse.message);
+            await trackAIUsage(user, 'general');
+        } else {
+            await sendTelegramMessage(bot, chatId, "I'm sorry, I don't understand that. Please focus on your current goal and use the /checkin command when you're ready.");
+        }
+    } catch (error) {
+        console.error("❌ Error handling message:", error);
+        await sendTelegramMessage(bot, chatId, "Something went wrong while processing your message. Please try again.");
+    }
 }
-
 module.exports = {
     handleMessage,
     createChecklistMessage,
