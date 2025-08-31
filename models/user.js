@@ -90,6 +90,13 @@ const userSchema = new mongoose.Schema({
             default: null
         }
     },
+
+    // ⭐ NEW FIELD: Handles vague mini-goal reminder flows
+    pendingReminder: {
+        task: { type: String, default: null },
+        waitingForTime: { type: Boolean, default: false }
+    },
+
     
     // Other fields from your original schema
     timelineFlag: {

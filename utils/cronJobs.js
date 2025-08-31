@@ -17,25 +17,25 @@ function startDailyJobs(bot) {
         try {
             const now = moment().tz(TIMEZONE);
 
-            // --- Mini-goal reminders ---
-            const dueGoals = await MiniGoal.find({
-                remindAt: { $lte: new Date() },
-                sent: false
-            });
+           // --- Mini-goal reminders ---
+const dueGoals = await MiniGoal.find({
+    time: { $lte: new Date() },
+    reminded: false
+});
 
-            for (const goal of dueGoals) {
-                try {
-                    await bot.sendMessage(
-                        goal.userId,
-                        `🎯 Mini Goal Reminder: ${goal.text}`
-                    );
-                    goal.sent = true;
-                    await goal.save();
-                    console.log(`✅ Sent mini-goal reminder to user ${goal.userId}: ${goal.text}`);
-                } catch (err) {
-                    console.error(`❌ Error sending mini-goal reminder for user ${goal.userId}:`, err.message);
-                }
-            }
+for (const goal of dueGoals) {
+    try {
+        await bot.sendMessage(
+            goal.telegramId,   // ✅ use telegramId instead of userId
+            `🎯 Mini Goal Reminder: ${goal.text}`
+        );
+        goal.reminded = true; // ✅ correct field
+        await goal.save();
+        console.log(`✅ Sent mini-goal reminder to user ${goal.telegramId}: ${goal.text}`);
+    } catch (err) {
+        console.error(`❌ Error sending mini-goal reminder for user ${goal.telegramId}:`, err.message);
+    }
+}
 
             // --- Task reminders from daily checklists ---
             const today = now.startOf('day').toDate();
