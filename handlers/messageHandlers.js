@@ -340,7 +340,7 @@ async function handleMessage(bot, msg) {
                         );
                         await sendTelegramMessage(
                             bot,
-                            updatedUser.telegramId,
+                            chatId,
                             `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
                         );
                     } else {
@@ -428,6 +428,24 @@ async function handleMessage(bot, msg) {
 
             if (checklist) {
                 if (checklist.checkedIn) {
+                    // Start of the fix
+                    const completedTasksCount = checklist.tasks.filter((task) => task.completed).length;
+                    const totalTasksCount = checklist.tasks.length;
+                    const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
+                    
+                    // Update and save the streak before creating the message
+                    if (completionPercentage === 100) {
+                        user.currentStreak += 1;
+                    } else if (completionPercentage > 0) {
+                        // The user completed some tasks but not all, so we don't reset the streak, but we don't increment it either.
+                        // Or you could decide to reset it. This is a business logic choice. For now, we'll keep the streak as is for partial completion.
+                    } else {
+                        user.currentStreak = 0;
+                    }
+                    user.lastCheckinDate = new Date();
+                    await user.save();
+                    // End of the fix
+
                     const finalMessage = createFinalCheckinMessage(user, checklist);
                     return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
@@ -461,7 +479,7 @@ async function handleMessage(bot, msg) {
             }
             return;
         }
-        
+
         if (command === '/setgoal') {
             const newGoalText = userInput.replace(/^\s*\/\w+\s*/, '').trim();
             if (!newGoalText) {
@@ -471,7 +489,7 @@ async function handleMessage(bot, msg) {
                     "Please provide a goal to set. Example: `/setgoal Learn to code in Python`"
                 );
             }
-            
+
             const model = await checkAIUsageAndGetModel(user, chatId, bot);
             if (!model) return;
 
@@ -485,14 +503,14 @@ async function handleMessage(bot, msg) {
             // Step 2: Manually parse and validate the timeline
             let isTimelineRealistic = true;
             let timelineInDays = Infinity;
-            
+
             if (timeline) {
                 const parsedTimeline = chrono.parse(timeline, new Date(), { timezone: TIMEZONE });
                 if (parsedTimeline.length > 0) {
                     const endDate = parsedTimeline[0].start.date();
                     const diffInMs = endDate.getTime() - new Date().getTime();
                     timelineInDays = diffInMs / (1000 * 60 * 60 * 24);
-                    
+
                     // Define "unrealistic" here (e.g., less than 7 days)
                     if (timelineInDays < 7) {
                         isTimelineRealistic = false;
@@ -502,7 +520,7 @@ async function handleMessage(bot, msg) {
                     isTimelineRealistic = false;
                 }
             }
-            
+
             // Step 3: Branch the logic based on timeline realism
             if (!isTimelineRealistic) {
                 const aiCritique = await getSmartResponse(user, 'goal_critique', { goalText });
@@ -523,12 +541,12 @@ async function handleMessage(bot, msg) {
             const aiChecklistResponse = await getSmartResponse(user, 'create_checklist', {
                 goalMemory: user.goalMemory,
             });
-            
+
             if (aiChecklistResponse.intent === 'create_checklist' && aiChecklistResponse.daily_tasks && aiChecklistResponse.daily_tasks.length > 0) {
                 const newChecklist = await createAndSaveChecklist(user.telegramId, aiChecklistResponse);
                 const messageText = `✅ Got it! Your new weekly goal is: *${newChecklist.weeklyGoal}*. Let's break it down.\n\n` +
-                                    `Here is your first daily checklist:\n\n` +
-                                    createChecklistMessage(newChecklist);
+                    `Here is your first daily checklist:\n\n` +
+                    createChecklistMessage(newChecklist);
                 const keyboard = createChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 await trackAIUsage(user, 'checklist');
@@ -556,7 +574,7 @@ async function handleMessage(bot, msg) {
             }
             return;
         }
-        
+
         if (command === '/goals') {
             await listUserGoals(bot, user, chatId);
             return;
