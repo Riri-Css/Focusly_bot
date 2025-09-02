@@ -44,11 +44,12 @@ const userSchema = new mongoose.Schema({
     lastWeeklyReflectionDate: Date,
     lastMonthlyReflectionDate: Date,
     // Subscription & AI fields
-    subscriptionStatus: {
-        type: String,
-        enum: ['active', 'inactive', 'trial'],
-        default: 'trial'
-    },
+   subscriptionStatus: {
+    type: String,
+    enum: ['trialing', 'active', 'inactive', 'trial'],
+    default: 'trialing'
+},
+
     subscriptionPlan: String,
     subscriptionEndDate: Date,
     gptVersion: {
