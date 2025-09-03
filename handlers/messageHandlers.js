@@ -434,15 +434,22 @@ async function handleMessage(bot, msg) {
                     const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
                     
                     // Update and save the streak before creating the message
-                    if (completionPercentage === 100) {
-                        user.currentStreak += 1;
-                    } else if (completionPercentage > 0) {
-                        // The user completed some tasks but not all, so we don't reset the streak, but we don't increment it either.
-                        // Or you could decide to reset it. This is a business logic choice. For now, we'll keep the streak as is for partial completion.
-                    } else {
-                        user.currentStreak = 0;
-                    }
-                    user.lastCheckinDate = new Date();
+                    const today = moment().tz(TIMEZONE).startOf("day"); 
+                    const yesterday = moment().tz(TIMEZONE).subtract(1, "day").startOf("day"); 
+                    const lastCheckIn = user.lastCheckInDate ? moment(user.lastCheckInDate).tz(TIMEZONE).startOf("day") : null; 
+                    if (!lastCheckIn) { // First ever check-in 
+                        user.currentStreak = 1; 
+                    } else if (lastCheckIn.isSame(today)) { // Already checked in today → do nothing 
+                        user.currentStreak = 1; 
+                    } else if (lastCheckIn.isSame(yesterday)) { // Consecutive day → increment streak 
+                        user.currentStreak += 1; 
+                    } else { // Missed days → reset streak 
+                        user.currentStreak = 1; 
+                    } 
+                    if (user.currentStreak > user.longestStreak) { 
+                        user.longestStreak = user.currentStreak; 
+                    } 
+                    user.lastCheckInDate = new Date(); 
                     await user.save();
                     // End of the fix
 
