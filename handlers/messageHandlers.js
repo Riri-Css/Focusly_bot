@@ -440,7 +440,7 @@ async function handleMessage(bot, msg) {
                     if (!lastCheckIn) { // First ever check-in 
                         user.currentStreak = 1; 
                     } else if (lastCheckIn.isSame(today)) { // Already checked in today → do nothing 
-                        user.currentStreak = 1; 
+                        // Do nothing
                     } else if (lastCheckIn.isSame(yesterday)) { // Consecutive day → increment streak 
                         user.currentStreak += 1; 
                     } else { // Missed days → reset streak 
