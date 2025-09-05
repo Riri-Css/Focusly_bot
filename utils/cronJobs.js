@@ -301,7 +301,7 @@ Proud of you. Keep proving yourself right 🌟.`;
     }, { timezone: TIMEZONE });
 
     // ⏰ 11:59 PM Daily Check-in Reminder
-    cron.schedule('59 23 * * *', async () => {
+    cron.schedule('30 23 * * *', async () => {
         console.log('⏰ Running 11:59 PM check-in reminder...');
         try {
             const users = await User.find({ hasCheckedInTonight: false });
@@ -315,7 +315,7 @@ Proud of you. Keep proving yourself right 🌟.`;
 
 It's almost midnight. You have less than an hour to check in for today to keep your streak alive!
 
-Type something in your chat to get started or use the **/checkin** command.
+Kindly click on tasks you did today and submit yor checklist.
 `;
                         await sendTelegramMessage(bot, user.telegramId, message);
                     }

@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
         checkedIn: { type: Boolean, default: false },
     }],
     // Streak tracking
-    currentStreak: {
+    streak: {
         type: Number,
         default: 0
     },

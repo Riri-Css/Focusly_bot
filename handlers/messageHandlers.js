@@ -82,7 +82,7 @@ function createFinalCheckinMessage(user, checklist) {
     const totalTasksCount = checklist.tasks.length;
     const completionPercentage =
         totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
-    const streakCount = user.currentStreak || 0;
+    const streakCount = user.streak || 0;
 
     let message = `**Check-in Complete!** 🎉\n\n`;
 
@@ -428,31 +428,7 @@ async function handleMessage(bot, msg) {
 
             if (checklist) {
                 if (checklist.checkedIn) {
-                    // Start of the fix
-                    const completedTasksCount = checklist.tasks.filter((task) => task.completed).length;
-                    const totalTasksCount = checklist.tasks.length;
-                    const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
                     
-                    // Update and save the streak before creating the message
-                    const today = moment().tz(TIMEZONE).startOf("day"); 
-                    const yesterday = moment().tz(TIMEZONE).subtract(1, "day").startOf("day"); 
-                    const lastCheckIn = user.lastCheckInDate ? moment(user.lastCheckInDate).tz(TIMEZONE).startOf("day") : null; 
-                    if (!lastCheckIn) { // First ever check-in 
-                        user.currentStreak = 1; 
-                    } else if (lastCheckIn.isSame(today)) { // Already checked in today → do nothing 
-                        // Do nothing
-                    } else if (lastCheckIn.isSame(yesterday)) { // Consecutive day → increment streak 
-                        user.currentStreak += 1; 
-                    } else { // Missed days → reset streak 
-                        user.currentStreak = 1; 
-                    } 
-                    if (user.currentStreak > user.longestStreak) { 
-                        user.longestStreak = user.currentStreak; 
-                    } 
-                    user.lastCheckInDate = new Date(); 
-                    await user.save();
-                    // End of the fix
-
                     const finalMessage = createFinalCheckinMessage(user, checklist);
                     return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
