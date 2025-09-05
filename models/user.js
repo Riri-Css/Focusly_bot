@@ -126,6 +126,12 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    goalMemory: {
+    text: String,
+    monthlyTarget: String,      // NEW - for monthly breakdown
+    weeklyTarget: String,       // NEW - for weekly breakdown  
+    lastUpdated: Date,
+},
 });
 
 module.exports = mongoose.model('User', userSchema);

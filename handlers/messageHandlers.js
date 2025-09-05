@@ -24,6 +24,27 @@ const User = require('../models/user');
 const TIMEZONE = 'Africa/Lagos';
 const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 
+// Add goal validation function
+function isValidGoal(goalText) {
+    if (!goalText || goalText.trim().length < 10) {
+        return false;
+    }
+    
+    // Common greetings/small talk patterns to reject
+    const invalidPatterns = [
+        /^hello|hi|hey|greetings/i,
+        /how are you|what's up|how's it going/i,
+        /good morning|good afternoon|good evening/i,
+        /^thanks|thank you|thx/i,
+        /^nice to meet you|pleasure to meet you/i,
+        /^what's your name|who are you/i,
+        /^test|testing|just testing/i,
+        /^baby|honey|dear|sweetie/i
+    ];
+    
+    return !invalidPatterns.some(pattern => pattern.test(goalText.trim()));
+}
+
 // Helper function to send Telegram messages
 async function sendTelegramMessage(bot, chatId, messageText, options = {}) {
     try {
@@ -464,15 +485,59 @@ async function handleMessage(bot, msg) {
         }
 
         if (command === '/setgoal') {
-            const newGoalText = userInput.replace(/^\s*\/\w+\s*/, '').trim();
-            if (!newGoalText) {
-                return sendTelegramMessage(
-                    bot,
-                    chatId,
-                    "Please provide a goal to set. Example: `/setgoal Learn to code in Python`"
-                );
-            }
-
+    const newGoalText = userInput.replace(/^\s*\/\w+\s*/, '').trim();
+    
+    if (!newGoalText || !isValidGoal(newGoalText)) {
+        return sendTelegramMessage(
+            bot,
+            chatId,
+            "🚫 I need a real goal to work with. Give me something substantial!\n\n" +
+            "Like: '/setgoal Learn web development in 3 months'"
+        );
+    }
+    
+    // Let AI decide if this needs breakdown
+    const aiResponse = await getSmartResponse(user, 'conversational_intent', { 
+        userInput: `set goal: ${newGoalText}` 
+    });
+    
+    if (aiResponse.intent === 'set_goal_breakdown') {
+        // Start AI-driven breakdown process
+        user.pendingAction = { 
+            type: 'ai_goal_breakdown', 
+            goalText: newGoalText,
+            currentStep: 'monthly_target'
+        };
+        await user.save();
+        
+        const monthlySuggestion = await getSmartResponse(user, 'goal_breakdown_suggestion', {
+            goalText: newGoalText,
+            breakdownType: 'monthly'
+        });
+        
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            `🎯 Let's break this down properly.\n\n` +
+            `💡 **AI Suggestion:** ${monthlySuggestion.suggestion}\n\n` +
+            `First, what's your monthly target? How will you measure success?`
+        );
+    } else {
+        // Standard goal setting
+        user.goalMemory = {
+            text: newGoalText,
+            lastUpdated: new Date()
+        };
+        await user.save();
+        
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            "✅ Goal updated! Now let's see some action. Use /checkin for your tasks."
+        );
+    }
+    
+            
             const model = await checkAIUsageAndGetModel(user, chatId, bot);
             if (!model) return;
 
@@ -564,26 +629,140 @@ async function handleMessage(bot, msg) {
         }
 
         if (user && user.onboardingStep === 'awaiting_goal') {
-            if (userInput && userInput.length > 5) {
-                user.goalMemory = {
-                    text: userInput,
-                    lastUpdated: new Date()
-                };
-                user.onboardingStep = 'onboarded';
-                await user.save();
-                return sendTelegramMessage(
-                    bot,
-                    chatId,
-                    "Awesome! I've set your weekly goal. I'll send you a daily checklist to help you stay on track. Just type /checkin when you're ready to see it."
-                );
-            } else {
-                return sendTelegramMessage(
-                    bot,
-                    chatId,
-                    "Please provide a more detailed goal. What's one thing you want to achieve this week?"
-                );
-            }
+    if (userInput && userInput.length > 10 && isValidGoal(userInput)) {
+        // Let AI handle the goal breakdown process
+        const aiResponse = await getSmartResponse(user, 'conversational_intent', { userInput });
+        
+        if (aiResponse.intent === 'set_goal_breakdown') {
+            // Start the AI-driven breakdown process
+            user.pendingAction = { 
+                type: 'ai_goal_breakdown', 
+                goalText: userInput,
+                currentStep: 'monthly_target'
+            };
+            await user.save();
+            
+            // Get AI suggestion for monthly target
+            const monthlySuggestion = await getSmartResponse(user, 'goal_breakdown_suggestion', {
+                goalText: userInput,
+                breakdownType: 'monthly'
+            });
+            
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                `🎯 Great goal! Let's break this down.\n\n` +
+                `💡 **AI Suggestion:** ${monthlySuggestion.suggestion}\n\n` +
+                `What's your target for the end of the month? How will you measure success?`
+            );
+        } else {
+            // If AI doesn't detect breakdown intent, proceed with standard goal setting
+            user.goalMemory = {
+                text: userInput,
+                lastUpdated: new Date()
+            };
+            user.onboardingStep = 'onboarded';
+            await user.save();
+            
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                "✅ Goal set! I'll help you stay on track. Use /checkin to get your daily tasks."
+            );
         }
+        
+    } else {
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            "🚫 That doesn't look like a actionable goal. Give me something real to work with!\n\n" +
+            "Examples:\n• 'Learn Python programming'\n• 'Lose 5kg'\n• 'Build a website'\n\n" +
+            "What's your actual goal?"
+        );
+    }
+    return;
+}
+
+// AI-Driven goal breakdown handler
+if (user.pendingAction && user.pendingAction.type === 'ai_goal_breakdown') {
+    const currentStep = user.pendingAction.currentStep;
+    
+    if (currentStep === 'monthly_target') {
+        // Store monthly target and move to weekly
+        user.pendingAction.monthlyTarget = userInput;
+        user.pendingAction.currentStep = 'weekly_milestone';
+        await user.save();
+        
+        // Get AI suggestion for weekly milestone
+        const weeklySuggestion = await getSmartResponse(user, 'goal_breakdown_suggestion', {
+            goalText: user.pendingAction.goalText,
+            breakdownType: 'weekly',
+            monthlyTarget: userInput
+        });
+        
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            `📅 Monthly target set! Now let's break it down weekly.\n\n` +
+            `💡 **AI Suggestion:** ${weeklySuggestion.suggestion}\n\n` +
+            `What's your weekly milestone toward this monthly target?`
+        );
+        
+    } else if (currentStep === 'weekly_milestone') {
+        // Complete the breakdown process
+        user.goalMemory = {
+            text: user.pendingAction.goalText,
+            monthlyTarget: user.pendingAction.monthlyTarget,
+            weeklyTarget: userInput,
+            lastUpdated: new Date()
+        };
+        user.onboardingStep = 'onboarded';
+        user.pendingAction = null;
+        await user.save();
+        
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            "✅ Perfect! Your goal breakdown is complete:\n\n" +
+            `🎯 **Main Goal:** ${user.goalMemory.text}\n` +
+            `📅 **Monthly Target:** ${user.goalMemory.monthlyTarget}\n` +
+            `📆 **Weekly Milestone:** ${user.goalMemory.weeklyTarget}\n\n` +
+            "Ready to get started? Use /checkin for your daily tasks."
+        );
+    }
+    return;
+}
+
+    // Handle guidance requests
+if (aiResponse.intent === 'request_guidance') {
+    const model = await checkAIUsageAndGetModel(user, chatId, bot);
+    if (!model) return;
+    
+    const guidanceResponse = await getSmartResponse(user, 'task_guidance', {
+        goalText: user.goalMemory?.text,
+        taskContext: aiResponse.task_context || userInput
+    });
+    
+    await sendTelegramMessage(bot, chatId, guidanceResponse.message);
+    await trackAIUsage(user, 'guidance');
+    return;
+}
+
+// Handle strategy discussions
+if (aiResponse.intent === 'discuss_strategy') {
+    const model = await checkAIUsageAndGetModel(user, chatId, bot);
+    if (!model) return;
+    
+    const strategyResponse = await getSmartResponse(user, 'goal_strategy', {
+        goalText: user.goalMemory?.text,
+        goalAspect: aiResponse.goal_aspect || "general strategy"
+    });
+    
+    await sendTelegramMessage(bot, chatId, strategyResponse.message);
+    await trackAIUsage(user, 'strategy');
+    return;
+}
+
 
         // --- AI-powered conversational intent handling ---
         const model = await checkAIUsageAndGetModel(user, chatId, bot);

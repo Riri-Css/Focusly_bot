@@ -151,22 +151,55 @@ Your responses must be structured as a JSON object with a specific 'intent' and 
                 break;
 
             case 'conversational_intent':
-                userInputContent = data.userInput || "No input provided";
-                responseFormat = `Based on the user's message, classify their primary intent from this list. ONLY respond with one of the provided JSON objects.
+            userInputContent = data.userInput || "No input provided";
+            responseFormat = `Based on the user's message, classify their primary intent from this expanded list:
                     
-                    **Intent List:**
-                    1. **list_mini_goals**: For queries like "how many mini goals do i have", "list my reminders", or "show me my mini goals".
-                    2. **list_all_goals**: For queries like "how many goals do i have" or "show me all my goals". This includes the main goal and mini-goals.
-                    3. **general**: If the message doesn't fit any other category.
+                    **Enhanced Intent List:**
+                    1. **list_mini_goals**: "how many mini goals", "list my reminders", "show me my mini goals"
+                    2. **list_all_goals**: "how many goals", "show me all my goals", "what are my goals"
+                    3. **request_guidance**: "how do I", "help me with", "I'm stuck", "what should I do", "how to complete", "guide me"
+                    4. **discuss_strategy**: "strategy for", "how to achieve", "plan for", "best way to", "approach for"
+                    5. **set_goal_breakdown**: "monthly target", "weekly milestone", "break down my goal", "how to measure"
+                    6. **general**: If the message doesn't fit any other category.
 
                     **Response Format:**
                     - If intent is 'list_mini_goals': { "intent": "list_mini_goals" }
                     - If intent is 'list_all_goals': { "intent": "list_all_goals" }
-                    - If intent is 'general': { "intent": "general", "message": "Your sassy, direct message about a different topic." }
-                    
-                    Do not generate any messages for 'list_mini_goals' or 'list_all_goals'. Just return the intent.`;
-                break;
-            
+                    - If intent is 'request_guidance': { "intent": "request_guidance", "task_context": "brief description of what they need help with" }
+                    - If intent is 'discuss_strategy': { "intent": "discuss_strategy", "goal_aspect": "which part of the goal needs strategy" }
+                    - If intent is 'set_goal_breakdown': { "intent": "set_goal_breakdown", "breakdown_type": "monthly or weekly" }
+                    - If intent is 'general': { "intent": "general", "message": "Your sassy, direct response" }`;
+            break;
+
+                // Add these new cases to the switch statement
+            case 'goal_breakdown_suggestion':
+            userInputContent = `The user is setting up a goal breakdown. Their goal is: "${data.goalText}". 
+            For the breakdown type: "${data.breakdownType}", provide a thoughtful suggestion.`;
+            responseFormat = `{
+                "intent": "goal_breakdown_suggestion",
+                "suggestion": "Your AI-generated suggestion for the breakdown",
+                "reasoning": "Brief explanation of why this breakdown makes sense"
+            }`;
+            break;
+
+            case 'task_guidance':
+            userInputContent = `The user needs guidance. Their goal: "${data.goalText}". 
+            They need help with: "${data.taskContext}". Provide specific, actionable advice.`;
+            responseFormat = `{
+                "intent": "task_guidance", 
+                "message": "Your direct, actionable guidance here. Be specific and practical."
+            }`;
+            break;
+
+            case 'goal_strategy':
+            userInputContent = `The user wants strategy discussion. Their goal: "${data.goalText}".
+            They're focusing on: "${data.goalAspect}". Provide strategic advice.`;
+            responseFormat = `{
+                "intent": "goal_strategy",
+                "message": "Your strategic, in-depth advice here. Be serious and comprehensive."
+            }`;
+            break;
+
             case 'general_chat':
             default:
                 userInputContent = data.userInput || "Hello, let's talk goals!";
