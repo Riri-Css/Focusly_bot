@@ -1,7 +1,8 @@
-// File: src/controllers/userController.js - FINAL UPDATED VERSION
+// File: src/controllers/userController.js - UPDATED FOR TIER SUPPORT
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
+const { isFreeUser } = require('../utils/subscriptionUtils'); // 🆕 Import tier check
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -12,43 +13,48 @@ const TIMEZONE = 'Africa/Lagos';
  */
 async function getOrCreateUser(telegramId) {
     try {
-        let user = await User.findOne({ telegramId: telegramId });
+        // Use findOneAndUpdate with upsert to avoid race conditions
+        let user = await User.findOneAndUpdate(
+            { telegramId: telegramId },
+            { 
+                $setOnInsert: {
+                    telegramId: telegramId,
+                    streak: 0,
+                    lastCheckin: null,
+                    goalMemory: { text: null },
+                    checklists: [],
+                    lastCheckinDate: null,
+                    consecutiveChecks: 0,
+                    subscriptionStatus: 'trialing',
+                    subscriptionPlan: 'free-trial', 
+                    subscriptionEndDate: moment().tz(TIMEZONE).add(8, 'days').toDate(),
+                    aiUsage: [], 
+                    onboardingStep: 'awaiting_goal',
+                    recentChats: [],
+                    importantMemories: [],
+                }
+            },
+            { 
+                upsert: true,
+                new: true,
+                setDefaultsOnInsert: true
+            }
+        );
+
         if (!user) {
-            const now = moment().tz(TIMEZONE);
-            const trialEndDate = now.add(8, 'days').toDate();
+            console.error('Failed to get or create user:', telegramId);
+            return null;
+        }
 
-            user = new User({
-                telegramId: telegramId,
-                streak: 0,
-                lastCheckin: null,
-                goalMemory: { text: null },
-                checklists: [],
-                lastCheckinDate: null,
-                consecutiveChecks: 0,
-                subscriptionStatus: 'trialing',
-                subscriptionPlan: 'free-trial', 
-                subscriptionEndDate: trialEndDate,
-                aiUsage: [], 
-                onboardingStep: 'awaiting_goal',
-                recentChats: [],
-                importantMemories: [],
-            });
+        // Handle migrations and corrections on the fresh document
+        if (user.onboardingStep === 'start') {
+            user.onboardingStep = 'awaiting_goal';
             await user.save();
-            console.log(`✅ New user created with 8-day free trial: ${telegramId}`);
-        } else {
-            // --- TEMPORARY PATCH START ---
-            // This checks for and corrects the invalid 'start' value for existing users.
-            if (user.onboardingStep === 'start') {
-                user.onboardingStep = 'awaiting_goal';
-                await user.save();
-                console.log(`✅ Corrected onboardingStep for user ${telegramId}.`);
-            }
-            // --- TEMPORARY PATCH END ---
+        }
 
-            if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
-                user.aiUsage = [];
-                await user.save();
-            }
+        // Ensure arrays exist
+        if (!user.aiUsage || !Array.isArray(user.aiUsage)) {
+            user.aiUsage = [];
         }
         if (!user.recentChats) {
             user.recentChats = [];
@@ -56,16 +62,34 @@ async function getOrCreateUser(telegramId) {
         if (!user.importantMemories) {
             user.importantMemories = [];
         }
-        // Corrected: If onboardingStep is missing, set to a valid value
         if (!user.onboardingStep) {
             user.onboardingStep = 'awaiting_goal';
         }
         if (!user.goalMemory) {
             user.goalMemory = { text: null };
         }
+
         return user;
     } catch (error) {
         console.error("❌ Error in getOrCreateUser:", error);
+        return null;
+    }
+}
+
+/**
+ * Refresh a user document to avoid version conflicts
+ * @param {User} user The user document to refresh
+ * @returns {Promise<User|null>} The refreshed user document
+ */
+async function refreshUser(user) {
+    if (!user || !user._id) {
+        return null;
+    }
+    
+    try {
+        return await User.findById(user._id);
+    } catch (error) {
+        console.error("❌ Error refreshing user:", error);
         return null;
     }
 }
@@ -84,14 +108,18 @@ async function createAndSaveChecklist(telegramId, aiResponse) {
             return null;
         }
 
+        // Refresh user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return null;
+
         const today = moment().tz(TIMEZONE).startOf('day').toDate();
-        if (user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'))) {
+        if (refreshedUser.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'))) {
             console.warn(`Attempted to create duplicate checklist for user ${telegramId} on ${today}`);
-            return user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
+            return refreshedUser.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(today, 'day'));
         }
 
         const yesterday = moment().tz(TIMEZONE).subtract(1, 'day').startOf('day').toDate();
-        const yesterdayChecklist = user.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(yesterday, 'day'));
+        const yesterdayChecklist = refreshedUser.checklists.find(c => moment(c.date).tz(TIMEZONE).isSame(yesterday, 'day'));
         const uncompletedTasks = (yesterdayChecklist?.tasks || []).filter(task => !task.completed);
         
         const newTasks = uncompletedTasks.map(task => ({
@@ -108,18 +136,65 @@ async function createAndSaveChecklist(telegramId, aiResponse) {
 
         const newChecklist = {
             _id: new mongoose.Types.ObjectId(), 
-            weeklyGoal: aiResponse.weekly_goal || user.goalMemory.text,
+            weeklyGoal: aiResponse.weekly_goal || refreshedUser.goalMemory.text,
             tasks: newTasks,
             checkedIn: false,
             date: today
         };
         
-        user.checklists.unshift(newChecklist);
-        await user.save();
+        refreshedUser.checklists.unshift(newChecklist);
+        await refreshedUser.save();
         return newChecklist;
 
     } catch (error) {
         console.error('Error creating and saving checklist:', error);
+        throw error;
+    }
+}
+
+/**
+ * Creates a manual checklist for free users
+ * @param {string} telegramId The user's Telegram ID.
+ * @param {Array} tasks Array of task strings.
+ * @returns {Promise<Object|null>} The created checklist or null if error.
+ */
+async function createManualChecklist(telegramId, tasks) {
+    try {
+        const user = await getOrCreateUser(telegramId);
+        if (!user) {
+            console.error(`User with ID ${telegramId} not found.`);
+            return null;
+        }
+
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return null;
+
+        const today = moment().tz(TIMEZONE).startOf('day').toDate();
+        
+        // Remove any existing manual checklist for today
+        refreshedUser.checklists = refreshedUser.checklists.filter(
+            c => !(moment(c.date).tz(TIMEZONE).isSame(today, 'day') && c.isManual)
+        );
+
+        const manualChecklist = {
+            _id: new mongoose.Types.ObjectId(),
+            weeklyGoal: refreshedUser.goalMemory?.text || "Manual Goal",
+            tasks: tasks.map(task => ({
+                text: task,
+                completed: false,
+                _id: new mongoose.Types.ObjectId()
+            })),
+            checkedIn: false,
+            date: today,
+            isManual: true
+        };
+
+        refreshedUser.checklists.unshift(manualChecklist);
+        await refreshedUser.save();
+        return manualChecklist;
+
+    } catch (error) {
+        console.error('Error creating manual checklist:', error);
         throw error;
     }
 }
@@ -156,26 +231,31 @@ async function handleDailyCheckinReset(user) {
     }
 
     try {
+        // Refresh the user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return;
+
         const now = moment().tz(TIMEZONE);
         const todayStart = now.clone().startOf('day');
 
-        if (user.lastCheckinDate) {
-            const lastCheckinMoment = moment(user.lastCheckinDate).tz(TIMEZONE);
+        if (refreshedUser.lastCheckinDate) {
+            const lastCheckinMoment = moment(refreshedUser.lastCheckinDate).tz(TIMEZONE);
             const isYesterday = lastCheckinMoment.isSame(todayStart.clone().subtract(1, 'day'), 'day');
             const isToday = lastCheckinMoment.isSame(todayStart, 'day');
             
-            // ✅ Fix: only reset if last check-in was before yesterday
             if (!isYesterday && !isToday) {
-                console.log(`❌ User ${user.telegramId} missed check-in. Streak reset.`);
-                user.streak = 0;
+                console.log(`❌ User ${refreshedUser.telegramId} missed check-in. Streak reset.`);
+                // 🆕 Only reset streak for non-free users
+                if (!isFreeUser(refreshedUser)) {
+                    refreshedUser.streak = 0;
+                }
+                await refreshedUser.save();
             }
         }
-        await user.save();
     } catch (error) {
         console.error("❌ Error handling daily check-in reset:", error);
     }
 }
-
 
 /**
  * Updates a checklist for a user.
@@ -190,11 +270,16 @@ async function updateChecklist(telegramId, updatedChecklist) {
             console.error("User not found, cannot update checklist.");
             return null;
         }
-        const checklistIndex = user.checklists.findIndex(c => c._id.toString() === updatedChecklist._id.toString());
+        
+        // Refresh user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return null;
+
+        const checklistIndex = refreshedUser.checklists.findIndex(c => c._id.toString() === updatedChecklist._id.toString());
         if (checklistIndex !== -1) {
-            user.checklists[checklistIndex] = updatedChecklist;
-            await user.save();
-            return user.checklists[checklistIndex];
+            refreshedUser.checklists[checklistIndex] = updatedChecklist;
+            await refreshedUser.save();
+            return refreshedUser.checklists[checklistIndex];
         } else {
             console.error(`Checklist with ID ${updatedChecklist._id} not found for user ${telegramId}.`);
             return null;
@@ -204,7 +289,6 @@ async function updateChecklist(telegramId, updatedChecklist) {
         return null;
     }
 }
-
 
 /**
  * Retrieves a checklist by its ID for a specific user.
@@ -238,14 +322,19 @@ async function toggleTaskCompletion(telegramId, checklistId, taskIndex) {
         if (!user) {
             return null;
         }
-        const checklist = user.checklists.find(c => c._id.toString() === checklistId);
+        
+        // Refresh user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return null;
+
+        const checklist = refreshedUser.checklists.find(c => c._id.toString() === checklistId);
         if (!checklist) {
             console.error(`Checklist not found with ID: ${checklistId}`);
             return null;
         }
         if (checklist.tasks[taskIndex]) {
             checklist.tasks[taskIndex].completed = !checklist.tasks[taskIndex].completed;
-            await user.save();
+            await refreshedUser.save();
             return checklist;
         } else {
             console.error(`Task index ${taskIndex} not found in checklist ${checklistId}`);
@@ -269,49 +358,55 @@ async function submitCheckin(user, checklistId) {
     }
 
     try {
-        const checklist = user.checklists.find(c => c._id.toString() === checklistId);
+        // Refresh the user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return null;
+
+        const checklist = refreshedUser.checklists.find(c => c._id.toString() === checklistId);
         if (!checklist) {
             return null;
         }
 
         if (checklist.checkedIn) {
-            return user; // Already checked in today
+            return refreshedUser; // Already checked in today
         }
 
         const todayStart = moment().tz(TIMEZONE).startOf('day');
-        const lastCheckinDate = user.lastCheckinDate
-            ? moment(user.lastCheckinDate).tz(TIMEZONE).startOf('day')
+        const lastCheckinDate = refreshedUser.lastCheckinDate
+            ? moment(refreshedUser.lastCheckinDate).tz(TIMEZONE).startOf('day')
             : null;
 
-        if (!lastCheckinDate) {
-            // First check-in ever
-            user.streak = 1;
-        } else {
-            const diff = todayStart.diff(lastCheckinDate, 'days');
-
-            if (diff === 0) {
-                // Already checked in today
-                return user;
-            } else if (diff === 1) {
-                // Consecutive day → increment streak
-                user.streak = (user.streak || 0) + 1;
+        // 🆕 Only update streak for non-free users
+        if (!isFreeUser(refreshedUser)) {
+            if (!lastCheckinDate) {
+                // First check-in ever
+                refreshedUser.streak = 1;
             } else {
-                // Missed at least one day → reset streak
-                user.streak = 1;
+                const diff = todayStart.diff(lastCheckinDate, 'days');
+
+                if (diff === 0) {
+                    // Already checked in today
+                    return refreshedUser;
+                } else if (diff === 1) {
+                    // Consecutive day → increment streak
+                    refreshedUser.streak = (refreshedUser.streak || 0) + 1;
+                } else {
+                    // Missed at least one day → reset streak
+                    refreshedUser.streak = 1;
+                }
             }
         }
 
         checklist.checkedIn = true;
-        user.lastCheckinDate = todayStart.toDate();
+        refreshedUser.lastCheckinDate = todayStart.toDate();
 
-        await user.save();
-        return user;
+        await refreshedUser.save();
+        return refreshedUser;
     } catch (error) {
         console.error("❌ Error submitting check-in:", error);
         return null;
     }
 }
-
 
 /**
  * Adds a recent chat message to a user's history.
@@ -325,14 +420,18 @@ async function addRecentChat(user, chatText) {
     }
     
     try {
-        if (!user.recentChats) {
-            user.recentChats = [];
+        // Refresh the user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return;
+        
+        if (!refreshedUser.recentChats) {
+            refreshedUser.recentChats = [];
         }
-        user.recentChats.push({ text: chatText, timestamp: new Date() });
-        if (user.recentChats.length > 10) {
-            user.recentChats.shift();
+        refreshedUser.recentChats.push({ text: chatText, timestamp: new Date() });
+        if (refreshedUser.recentChats.length > 10) {
+            refreshedUser.recentChats.shift();
         }
-        await user.save();
+        await refreshedUser.save();
     } catch (error) {
         console.error("❌ Error adding recent chat:", error);
     }
@@ -350,19 +449,63 @@ async function addImportantMemory(user, memoryText) {
     }
 
     try {
-        if (!user.importantMemories) {
-            user.importantMemories = [];
+        // Refresh the user to avoid version conflicts
+        const refreshedUser = await refreshUser(user);
+        if (!refreshedUser) return;
+        
+        if (!refreshedUser.importantMemories) {
+            refreshedUser.importantMemories = [];
         }
-        user.importantMemories.push({ text: memoryText, timestamp: new Date() });
-        await user.save();
+        refreshedUser.importantMemories.push({ text: memoryText, timestamp: new Date() });
+        await refreshedUser.save();
     } catch (error) {
         console.error("❌ Error adding important memory:", error);
+    }
+}
+
+/**
+ * RECOVERY: Fix users who were incorrectly moved from free-trial to free
+ * Run this once after deploying the fix
+ */
+async function recoverIncorrectlyExpiredTrials() {
+    try {
+        const affectedUsers = await User.find({
+            subscriptionPlan: 'free',
+            subscriptionStatus: 'inactive',
+            createdAt: { 
+                $gte: moment().tz(TIMEZONE).subtract(7, 'days').toDate() 
+            }
+        });
+
+        console.log(`Found ${affectedUsers.length} potentially affected users`);
+
+        let recoveredCount = 0;
+        for (const user of affectedUsers) {
+            // Check if they were created less than 8 days ago
+            const userAgeDays = moment().tz(TIMEZONE).diff(moment(user.createdAt).tz(TIMEZONE), 'days');
+            
+            if (userAgeDays < 8) {
+                // This user was incorrectly expired - restore their trial
+                user.subscriptionPlan = 'free-trial';
+                user.subscriptionStatus = 'trialing';
+                user.subscriptionEndDate = moment(user.createdAt).tz(TIMEZONE).add(8, 'days').toDate();
+                
+                await user.save();
+                recoveredCount++;
+                console.log(`✅ Restored trial for user ${user.telegramId}, ${8 - userAgeDays} days remaining`);
+            }
+        }
+
+        console.log(`🎉 Recovery complete: ${recoveredCount} users had trials restored`);
+    } catch (error) {
+        console.error('❌ Error in trial recovery:', error);
     }
 }
 
 module.exports = {
     getOrCreateUser,
     createAndSaveChecklist,
+    createManualChecklist, // 🆕 Export manual checklist function
     getChecklistByDate,
     handleDailyCheckinReset,
     toggleTaskCompletion,
@@ -370,5 +513,7 @@ module.exports = {
     addRecentChat,
     addImportantMemory,
     getChecklistById,
-    updateChecklist
+    updateChecklist,
+    refreshUser,
+    recoverIncorrectlyExpiredTrials
 };

@@ -1,4 +1,4 @@
-// File: src/handlers/messageHandlers.js - REFACTORED & FIXED
+// File: src/handlers/messageHandlers.js - UPDATED WITH TIER DIFFERENTIATION
 const {
     getOrCreateUser,
     addRecentChat,
@@ -9,13 +9,26 @@ const {
     setGoalMemory,
 } = require('../controllers/userController');
 
-const { hasAIUsageAccess, trackAIUsage } = require('../utils/subscriptionUtils');
+const { 
+    hasAIUsageAccess, 
+    trackAIUsage,
+    isFreeUser,
+    isBasicUser, 
+    isPremiumUser,
+    hasAIAccess,
+    hasAutoTasks,
+    hasStreaks,
+    hasReflections,
+    hasSmartReminders,
+    canAccessFeature
+} = require('../utils/subscriptionUtils');
 const { sendSubscriptionOptions } = require('../utils/telegram');
 const { getSmartResponse } = require('../utils/getSmartResponse');
 const { updateSubscription } = require('../utils/adminUtils');
 
 const moment = require('moment-timezone');
 const chrono = require('chrono-node');
+const mongoose = require('mongoose');
 
 const MiniGoal = require('../models/miniGoal');
 const User = require('../models/user');
@@ -100,23 +113,31 @@ function createChecklistKeyboard(checklist) {
 function createFinalCheckinMessage(user, checklist) {
     const completedTasksCount = checklist.tasks.filter((task) => task.completed).length;
     const totalTasksCount = checklist.tasks.length;
-    const completionPercentage =
-        totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
-    const streakCount = user.streak || 0;
+    const completionPercentage = totalTasksCount > 0 ? (completedTasksCount / totalTasksCount) * 100 : 0;
+    
+    // 🆕 Free users don't see streak count
+    const streakCount = hasStreaks(user) ? user.streak || 0 : 0;
 
     let message = `**Check-in Complete!** 🎉\n\n`;
 
     if (completionPercentage === 100) {
-        message += `You crushed it! You completed **all ${totalTasksCount} tasks** today. This is the consistency we're looking for! Keep it up! 💪`;
+        message += `You crushed it! You completed **all ${totalTasksCount} tasks** today. `;
+        message += hasStreaks(user) ? 'This is the consistency we\'re looking for! Keep it up! 💪' : 'Great job!';
     } else if (completionPercentage > 50) {
-        message += `Great job! You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. You're building solid momentum. Let's get to 100% tomorrow!`;
+        message += `Great job! You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. `;
+        message += hasStreaks(user) ? 'You\'re building solid momentum. Let\'s get to 100% tomorrow!' : 'Keep going!';
     } else if (completionPercentage > 0) {
-        message += `Alright, let's pick up the pace. You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. Don't let those goals slip away. Consistency is key! 😠`;
+        message += `Alright, let's pick up the pace. You completed **${completedTasksCount} out of ${totalTasksCount} tasks**. `;
+        message += hasStreaks(user) ? 'Don\'t let those goals slip away. Consistency is key! 😠' : 'You can do better tomorrow!';
     } else {
-        message += `You completed **0 out of ${totalTasksCount} tasks**. I know it's tough, but you can't hit your goals if you don't even start. The tasks you missed have been added to your list for tomorrow. Get to work! 😤`;
+        message += `You completed **0 out of ${totalTasksCount} tasks**. I know it's tough, but you can't hit your goals if you don't even start. `;
+        message += 'Get to work! 😤';
     }
 
-    message += `\n\nYour current streak is now at **${streakCount}** days.`;
+    if (hasStreaks(user)) {
+        message += `\n\nYour current streak is now at **${streakCount}** days.`;
+    }
+
     return message;
 }
 
@@ -128,11 +149,26 @@ function delay(ms) {
 async function checkAIUsageAndGetModel(user, chatId, bot) {
     const hasAccess = await hasAIUsageAccess(user);
     if (!hasAccess) {
-        await sendTelegramMessage(
-            bot,
-            chatId,
-            '⚠️ You’ve reached your AI limit or don’t have access. Upgrade your plan or wait for your usage to reset. Type /subscription to see available plans.'
-        );
+        if (isFreeUser(user)) {
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                '🤖 AI Features are for subscribed users only!\n\n' +
+                'Free users manually set their own tasks without AI assistance.\n\n' +
+                '✨ Upgrade to Basic or Premium for:\n' +
+                '• AI-powered task generation\n' +
+                '• Smart goal validation\n' +
+                '• Weekly/Monthly reflections\n' +
+                '• Streak tracking & motivation\n\n' +
+                'Type /subscription to upgrade!'
+            );
+        } else {
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                '⚠️ You\'ve reached your AI limit. Upgrade your plan or wait for your usage to reset. Type /subscription to see available plans.'
+            );
+        }
         return null;
     }
     const model = user.gptVersion;
@@ -156,7 +192,7 @@ async function handleReminder(user, userInput, bot, chatId) {
             await sendTelegramMessage(
                 bot,
                 chatId,
-                "⚠️ I couldn’t understand that time or it's in the past. Please try again, e.g. *7:30am* or *14:00*."
+                "⚠️ I couldn't understand that time or it's in the past. Please try again, e.g. *7:30am* or *14:00*."
             );
             return true;
         }
@@ -176,7 +212,7 @@ async function handleReminder(user, userInput, bot, chatId) {
         await sendTelegramMessage(
             bot,
             chatId,
-            `✅ Got it! I’ll remind you to *${task}* at ${moment(parsedTime)
+            `✅ Got it! I'll remind you to *${task}* at ${moment(parsedTime)
                 .tz(TIMEZONE)
                 .format('h:mm A')}.`
         );
@@ -213,7 +249,7 @@ async function handleReminder(user, userInput, bot, chatId) {
             await sendTelegramMessage(
                 bot,
                 chatId,
-                `✅ Great! I’ll remind you to *${task}* at ${moment(parsedTime)
+                `✅ Great! I'll remind you to *${task}* at ${moment(parsedTime)
                     .tz(TIMEZONE)
                     .format('h:mm A')}.`
             );
@@ -267,6 +303,33 @@ async function listUserGoals(bot, user, chatId) {
     }
 }
 
+// 🆕 Function to handle free user manual task input
+async function handleFreeUserTaskInput(user, userInput, bot, chatId) {
+    const tasks = userInput.split('\n').map(task => task.trim()).filter(Boolean);
+    
+    const manualChecklist = {
+        _id: new mongoose.Types.ObjectId(),
+        weeklyGoal: user.goalMemory?.text || "Manual Goal",
+        tasks: tasks.map(task => ({
+            text: task,
+            completed: false,
+            _id: new mongoose.Types.ObjectId()
+        })),
+        checkedIn: false,
+        date: moment().tz(TIMEZONE).startOf('day').toDate(),
+        isManual: true
+    };
+    
+    user.checklists.unshift(manualChecklist);
+    user.pendingAction = null;
+    await user.save();
+    
+    const messageText = `✅ Manual tasks set! Here's your checklist:\n\n${createChecklistMessage(manualChecklist)}`;
+    const keyboard = createChecklistKeyboard(manualChecklist);
+    
+    await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+}
+
 // Main message handler
 async function handleMessage(bot, msg) {
     if (!msg || !msg.from || !msg.from.id || !msg.chat || !msg.chat.id) {
@@ -293,6 +356,12 @@ async function handleMessage(bot, msg) {
 
         const reminderHandled = await handleReminder(user, userInput, bot, chatId);
         if (reminderHandled) {
+            return;
+        }
+
+        // 🆕 Handle free user manual task input
+        if (isFreeUser(user) && user.pendingAction?.type === 'manual_tasks') {
+            await handleFreeUserTaskInput(user, userInput, bot, chatId);
             return;
         }
 
@@ -357,7 +426,7 @@ async function handleMessage(bot, msg) {
                 await sendTelegramMessage(
                     bot,
                     chatId,
-                    '⚠️ I couldn`t understand the new task or time. Please provide a valid time and optionally new text.'
+                    '⚠️ I couldn\'t understand the new task or time. Please provide a valid time and optionally new text.'
                 );
                 return;
             }
@@ -468,20 +537,21 @@ async function handleMessage(bot, msg) {
             const now = moment().tz(TIMEZONE).toDate();
             const isExpired = user.subscriptionEndDate && user.subscriptionEndDate < now;
             const isActive = user.subscriptionStatus === 'active' && !isExpired;
-            const isPremium = user.subscriptionPlan === 'premium' && isActive;
 
             if (isActive) {
-                await sendTelegramMessage(
-                    bot,
-                    chatId,
-                    `You are currently on the **${user.subscriptionPlan}** plan, which expires on **${moment(
-                        user.subscriptionEndDate
-                    )
+                let planMessage = `You are currently on the **${user.subscriptionPlan}** plan`;
+                
+                if (user.subscriptionEndDate) {
+                    planMessage += `, which expires on **${moment(user.subscriptionEndDate)
                         .tz(TIMEZONE)
-                        .format('LL')}**. Thank you for your continued support!`
-                );
+                        .format('LL')}**`;
+                }
+                
+                planMessage += '. Thank you for your continued support!';
+                
+                await sendTelegramMessage(bot, chatId, planMessage);
             } else {
-                await sendSubscriptionOptions(bot, chatId, isPremium, sendTelegramMessage);
+                await sendSubscriptionOptions(bot, chatId, isPremiumUser(user), sendTelegramMessage);
             }
             return;
         }
@@ -494,12 +564,31 @@ async function handleMessage(bot, msg) {
                     "You don't have a goal set yet! Use `/start` or `/setgoal` to define your weekly goal."
                 );
             }
+
+            // 🆕 FREE USER: Manual task setting
+            if (isFreeUser(user)) {
+                await sendTelegramMessage(
+                    bot,
+                    chatId,
+                    "📋 Free Plan - Manual Mode\n\n" +
+                    "Please set your daily tasks manually. Send your tasks (one per line):\n\n" +
+                    "Example:\n" +
+                    "Complete project report\n" +
+                    "Gym workout for 30 mins\n" +
+                    "Read chapter 5 of my book\n\n" +
+                    "💡 Upgrade to Basic for AI-powered automatic task generation!"
+                );
+                user.pendingAction = { type: 'manual_tasks' };
+                await user.save();
+                return;
+            }
+
+            // BASIC/PREMIUM: AI-powered checklist
             const today = moment().tz(TIMEZONE).startOf('day').toDate();
             const checklist = await getChecklistByDate(user.telegramId, today);
 
             if (checklist) {
                 if (checklist.checkedIn) {
-                    
                     const finalMessage = createFinalCheckinMessage(user, checklist);
                     return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
@@ -544,6 +633,30 @@ async function handleMessage(bot, msg) {
                 );
             }
 
+            // 🆕 FREE USER: Manual goal setting
+            if (isFreeUser(user)) {
+                user.goalMemory = {
+                    text: newGoalText,
+                    lastUpdated: new Date()
+                };
+                user.onboardingStep = 'onboarded';
+                await user.save();
+                
+                await sendTelegramMessage(
+                    bot,
+                    chatId,
+                    "✅ Goal set manually. As a free user, you'll need to create your own daily tasks.\n\n" +
+                    "💡 Upgrade to Basic or Premium for:\n" +
+                    "• AI-powered goal breakdowns\n" +
+                    "• Automatic daily task generation\n" +
+                    "• Timeline validation\n" +
+                    "• Weekly/Monthly reflections\n" +
+                    "• Streak tracking & motivation\n\n" +
+                    "Type /subscription to upgrade!"
+                );
+                return;
+            }
+
             const model = await checkAIUsageAndGetModel(user, chatId, bot);
             if (!model) return;
 
@@ -551,7 +664,7 @@ async function handleMessage(bot, msg) {
             const aiExtraction = await getSmartResponse(user, 'set_goal', { userInput: newGoalText });
             await trackAIUsage(user, 'general');
 
-            const goalText = aiExtraction.goal_text || newGoalText; // Use AI's extracted text or fallback
+            const goalText = aiExtraction.goal_text || newGoalText;
             const timeline = aiExtraction.timeline;
 
             // Step 2: Manually parse and validate the timeline
@@ -565,12 +678,10 @@ async function handleMessage(bot, msg) {
                     const diffInMs = endDate.getTime() - new Date().getTime();
                     timelineInDays = diffInMs / (1000 * 60 * 60 * 24);
 
-                    // Define "unrealistic" here (e.g., less than 7 days)
                     if (timelineInDays < 7) {
                         isTimelineRealistic = false;
                     }
                 } else {
-                    // Could not parse the timeline, assume it's unrealistic for simplicity
                     isTimelineRealistic = false;
                 }
             }
@@ -642,21 +753,51 @@ async function handleMessage(bot, msg) {
                 };
                 user.onboardingStep = 'onboarded';
                 await user.save();
-                return sendTelegramMessage(
-                    bot,
-                    chatId,
-                    "Awesome! I've set your weekly goal. I'll send you a daily checklist to help you stay on track. Just type /checkin when you're ready to see it."
-                );
+                
+                // 🆕 Different message for free users
+                if (isFreeUser(user)) {
+                    await sendTelegramMessage(
+                        bot,
+                        chatId,
+                        "✅ Goal set manually! You'll need to create your own daily tasks.\n\n" +
+                        "Use /checkin to set your tasks for today.\n\n" +
+                        "💡 Upgrade for AI-powered task generation and smart features!"
+                    );
+                } else {
+                    await sendTelegramMessage(
+                        bot,
+                        chatId,
+                        "Awesome! I've set your weekly goal. I'll send you a daily checklist to help you stay on track. Just type /checkin when you're ready to see it."
+                    );
+                }
             } else {
-                return sendTelegramMessage(
+                await sendTelegramMessage(
                     bot,
                     chatId,
                     "Please provide a more detailed goal. What's one thing you want to achieve this week?"
                 );
             }
+            return;
         }
 
         // --- AI-powered conversational intent handling ---
+        // 🆕 FREE USERS: Block AI access
+        if (isFreeUser(user)) {
+            await sendTelegramMessage(
+                bot,
+                chatId,
+                "🤖 AI Features are for subscribed users only!\n\n" +
+                "Free users manually set their own tasks without AI assistance.\n\n" +
+                "✨ Upgrade to Basic or Premium for:\n" +
+                "• AI-powered conversations\n" +
+                "• Smart goal guidance\n" +
+                "• Strategy recommendations\n" +
+                "• Behavioral insights\n\n" +
+                "Type /subscription to upgrade!"
+            );
+            return;
+        }
+
         const model = await checkAIUsageAndGetModel(user, chatId, bot);
         if (!model) return;
 
@@ -693,8 +834,6 @@ async function handleMessage(bot, msg) {
             await trackAIUsage(user, 'general');
             return;
         } else if (aiResponse.intent === 'create_checklist') {
-            // This is now redundant and will never be hit due to the /setgoal logic above,
-            // but we'll keep it for a moment to ensure no breaking changes.
             if (aiResponse.challenge_message) {
                 await sendTelegramMessage(bot, chatId, aiResponse.challenge_message);
                 await delay(1500);

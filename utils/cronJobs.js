@@ -1,4 +1,4 @@
-// File: src/utils/cronJobs.js - CONSOLIDATED & CORRECTED
+// File: src/utils/cronJobs.js - UPDATED FOR 4-TIER SYSTEM
 
 const cron = require('node-cron');
 const moment = require('moment-timezone');
@@ -11,15 +11,25 @@ const { createChecklistMessage, createChecklistKeyboard } = require('../handlers
 
 const TIMEZONE = 'Africa/Lagos';
 
+// Helper function to check if user should get automated features
+function shouldGetAutomatedFeatures(user) {
+    // Trial, Basic, and Premium users get automated features
+    return user.subscriptionPlan === 'free-trial' || 
+           user.subscriptionPlan === 'basic' || 
+           user.subscriptionPlan === 'premium';
+}
+
+// Helper function to check if user is on free plan (manual tasks only)
+function isFreePlan(user) {
+    return user.subscriptionPlan === 'free';
+}
+
 function startDailyJobs(bot) {
     // ⏰ Mini-Goal Reminder Check
-    // This runs every minute to check for any goals that are due.
     cron.schedule('* * * * *', async () => {
         console.log('⏰ Checking for due mini-goals...');
         try {
             const now = moment().tz(TIMEZONE).toDate();
-
-            // Find mini-goals that are due and haven't been reminded yet
             const dueGoals = await MiniGoal.find({
                 time: { $lte: now },
                 reminded: false
@@ -32,7 +42,6 @@ function startDailyJobs(bot) {
                         goal.telegramId,
                         `🎯 Mini-Goal Reminder: *${goal.text}*`
                     );
-                    // Mark the goal as reminded
                     goal.reminded = true;
                     await goal.save();
                     console.log(`✅ Sent mini-goal reminder to user ${goal.telegramId}: ${goal.text}`);
@@ -46,23 +55,15 @@ function startDailyJobs(bot) {
     }, { timezone: TIMEZONE });
 
     // ⏰ 12:01 AM Daily Reset Job
-    // This runs just after midnight to handle end-of-day logistics.
     cron.schedule('1 0 * * *', async () => {
         console.log('⏰ Running daily reset and streak calculation job...');
         try {
             const users = await User.find({});
             for (const user of users) {
-                // Find and reset the last AI usage record
                 const today = moment().tz(TIMEZONE).startOf('day').toDate();
                 user.aiUsage = user.aiUsage.filter(record => moment(record.date).isSameOrAfter(today));
-
-                // Reset hasSubmittedTasksToday and hasCheckedInTonight for the new day
                 user.hasSubmittedTasksToday = false;
                 user.hasCheckedInTonight = false;
-
-                // Daily streaks are now handled by the 'submitCheckin' function
-                // This job is just for clean-up
-                
                 await user.save();
             }
             console.log(`✅ Completed daily reset for all users.`);
@@ -71,11 +72,9 @@ function startDailyJobs(bot) {
         }
     }, { timezone: TIMEZONE });
 
-
-    // ⏰ 8 AM Daily Checklist Generator
-    // This job is now the only one that automatically creates a checklist.
+    // ⏰ 8 AM Daily Task Reminder (Different for Free vs Paid Users)
     cron.schedule('0 8 * * *', async () => {
-        console.log('⏰ Running 8 AM daily checklist generator...');
+        console.log('⏰ Running 8 AM daily task reminder...');
         try {
             const users = await User.find({});
             for (const user of users) {
@@ -98,28 +97,43 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
                         continue;
                     }
 
-                    const aiResponse = await getSmartResponse(user, 'create_checklist', { goalMemory: user.goalMemory });
+                    // 4-TIER DIFFERENTIATION
+                    if (isFreePlan(user)) {
+                        // Free users get a reminder to set their own tasks
+                        const reminderMessage = `
+Good morning! 🌅 It's time to plan your day.
 
-                    if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
-                        const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                        const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
-                        const keyboard = createChecklistKeyboard(newChecklist);
-                        await sendTelegramMessage(bot, user.telegramId, messageText, { reply_markup: keyboard });
-                        console.log(`✅ Sent 8 AM checklist to user ${user.telegramId}`);
-                    } else {
-                        await sendTelegramMessage(bot, user.telegramId, `I couldn't generate a checklist for you today. Let's re-examine your goal. Use the command /setgoal to update your goal.`);
-                        console.log(`⚠️ Failed to generate 8 AM checklist for user ${user.telegramId}`);
+As a free user, you need to set your daily tasks yourself to work towards your goal: "${user.goalMemory.text}"
+
+Use /tasks to create your daily checklist and stay on track!
+`;
+                        await sendTelegramMessage(bot, user.telegramId, reminderMessage);
+                        console.log(`✅ Sent task-setting reminder to free user ${user.telegramId}`);
+                    } else if (shouldGetAutomatedFeatures(user)) {
+                        // Trial, Basic, and Premium users get automatically generated tasks
+                        const aiResponse = await getSmartResponse(user, 'create_checklist', { goalMemory: user.goalMemory });
+
+                        if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
+                            const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
+                            const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` + createChecklistMessage(newChecklist);
+                            const keyboard = createChecklistKeyboard(newChecklist);
+                            await sendTelegramMessage(bot, user.telegramId, messageText, { reply_markup: keyboard });
+                            console.log(`✅ Sent 8 AM generated checklist to ${user.subscriptionPlan} user ${user.telegramId}`);
+                        } else {
+                            await sendTelegramMessage(bot, user.telegramId, `I couldn't generate a checklist for you today. Let's re-examine your goal. Use the command /setgoal to update your goal.`);
+                            console.log(`⚠️ Failed to generate 8 AM checklist for ${user.subscriptionPlan} user ${user.telegramId}`);
+                        }
                     }
                 } catch (err) {
-                    console.error(`❌ Error processing checklist for user ${user.telegramId}:`, err);
+                    console.error(`❌ Error processing 8 AM reminder for user ${user.telegramId}:`, err);
                 }
             }
         } catch (err) {
-            console.error('❌ 8 AM daily checklist cron error:', err);
+            console.error('❌ 8 AM daily reminder cron error:', err);
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 12 PM Progress Reminder
+    // ⏰ 12 PM Progress Reminder (for all users with goals)
     cron.schedule('0 12 * * *', async () => {
         console.log('⏰ Running 12 PM reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
@@ -131,31 +145,31 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 3 PM Progress Reminder
+    // ⏰ 3 PM Progress Reminder (for all users with goals)
     cron.schedule('0 15 * * *', async () => {
         console.log('⏰ Running 3 PM progress reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
         for (const user of users) {
             if (user.goalMemory) {
-                await sendTelegramMessage(bot, user.telegramId, "It’s 3 PM! How’s your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
+                await sendTelegramMessage(bot, user.telegramId, "It's 3 PM! How's your day going? Have you made progress on your tasks? At least by now you suppose dey round up o make you sef rest but na only if you don do something progressive.");
                 console.log(`✅ Sent 3 PM reminder to user ${user.telegramId}`);
             }
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 6 PM Progress Reminder
+    // ⏰ 6 PM Progress Reminder (for all users with goals)
     cron.schedule('0 18 * * *', async () => {
         console.log('⏰ Running 6 PM progress reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
         for (const user of users) {
             if (user.goalMemory) {
-                await sendTelegramMessage(bot, user.telegramId, "It’s 6 PM! How’s your evening going? Hope you're almost done with your tasks because excuses will not be accepted. I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
+                await sendTelegramMessage(bot, user.telegramId, "It's 6 PM! How's your evening going? Hope you're almost done with your tasks because excuses will not be accepted. I just make I yarn you and if you come with excuse, me sef dey gidigba for you!");
                 console.log(`✅ Sent 6 PM reminder to user ${user.telegramId}`);
             }
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 9 PM Dedicated Check-in Reminder
+    // ⏰ 9 PM Dedicated Check-in Reminder (for all users with goals)
     cron.schedule('0 21 * * *', async () => {
         console.log('⏰ Running 9 PM check-in reminder...');
         const users = await User.find({ hasCheckedInTonight: false });
@@ -167,7 +181,9 @@ A goal without a plan is just a wish. Let's make a plan. Use the command /setgoa
         }
     }, { timezone: TIMEZONE });
 
-    // --- NEW WEEKLY REFLECTION JOB (Sunday at 9 PM) ---
+ 
+    // ... (weekly reflection code)
+    
     cron.schedule('0 21 * * 0', async () => {
         console.log('⏰ Running weekly reflection job...');
         try {
@@ -300,7 +316,9 @@ Proud of you. Keep proving yourself right 🌟.`;
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ 11:59 PM Daily Check-in Reminder
+
+
+    // ⏰ 11:59 PM Daily Check-in Reminder (for all users with goals)
     cron.schedule('30 23 * * *', async () => {
         console.log('⏰ Running 11:59 PM check-in reminder...');
         try {
@@ -326,7 +344,7 @@ Kindly click on tasks you did today and submit yor checklist.
         }
     }, { timezone: TIMEZONE });
 
-    // ⏰ Daily AI Usage Reset (Separate to avoid confusion with streaks)
+    // ⏰ Daily AI Usage Reset
     cron.schedule('0 0 * * *', async () => {
         console.log('⏰ Running daily AI usage reset...');
         try {
@@ -336,6 +354,32 @@ Kindly click on tasks you did today and submit yor checklist.
             console.log('✅ Daily AI usage reset complete.');
         } catch (err) {
             console.error('❌ Daily AI usage reset cron error:', err);
+        }
+    }, { timezone: TIMEZONE });
+
+    // ⏰ Daily Subscription Check (Check for expired trials)
+    cron.schedule('0 2 * * *', async () => {
+        console.log('⏰ Running daily subscription check...');
+        try {
+            const now = moment().tz(TIMEZONE);
+            const expiredTrials = await User.find({
+                subscriptionPlan: 'free-trial',
+                subscriptionEndDate: { $lt: now.toDate() }
+            });
+            
+            for (const user of expiredTrials) {
+                user.subscriptionPlan = 'free';
+                user.subscriptionStatus = 'inactive';
+                await user.save();
+                console.log(`✅ Converted expired trial user ${user.telegramId} to free plan`);
+                
+                // Notify user about subscription change
+                await sendTelegramMessage(bot, user.telegramId, 
+                    `Your free trial has ended. You've been moved to the free plan. Use /premium to upgrade to Basic or Premium for AI-generated daily tasks and advanced features.`
+                );
+            }
+        } catch (err) {
+            console.error('❌ Daily subscription check error:', err.message);
         }
     }, { timezone: TIMEZONE });
 
