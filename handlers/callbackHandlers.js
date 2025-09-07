@@ -1,11 +1,12 @@
-// File: src/handlers/callbackHandlers.js - UPDATED VERSION
+// File: src/handlers/callbackHandlers.js - FIXED VERSION
 const User = require('../models/user');
-const miniGoal = require('../models/miniGoal'); // NEW: Import the miniGoal model
+const miniGoal = require('../models/miniGoal');
 const {
     toggleTaskCompletion,
     getChecklistById,
     submitCheckin,
     getOrCreateUser,
+    refreshUser // 🆕 Import refreshUser if not already imported
 } = require('../controllers/userController');
 const {
     createChecklistKeyboard,
@@ -81,13 +82,11 @@ async function handleCallbackQuery(bot, callbackQuery) {
 
         switch (action) {
             case 'editGoal':
-                // NEW: Find the user and set a pending edit action
                 const editUser = await User.findOne({ telegramId: user.telegramId });
                 if (!editUser) {
                     return sendTelegramMessage(bot, chatId, "User not found.");
                 }
 
-                // Store the goal ID to be edited in the user's document
                 editUser.pendingAction = { type: 'editGoal', goalId: id };
                 await editUser.save();
 
@@ -95,17 +94,15 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 break;
                 
             case 'deleteGoal':
-                // NEW: Find and delete the mini-goal
                 const deletedGoal = await miniGoal.findByIdAndDelete(id);
                 if (deletedGoal) {
-                    // Edit the message to show a confirmation
                     await bot.editMessageText(
                         `🗑️ The mini-goal to *${deletedGoal.text}* has been deleted.`,
                         {
                             chat_id: chatId,
                             message_id: messageId,
                             parse_mode: 'Markdown',
-                            reply_markup: { inline_keyboard: [] } // Remove the buttons
+                            reply_markup: { inline_keyboard: [] }
                         }
                     );
                 } else {
@@ -139,15 +136,40 @@ async function handleCallbackQuery(bot, callbackQuery) {
                 break;
 
             case 'submit':
-                const checklist = await getChecklistById(user.telegramId, id);
-                if (checklist.checkedIn) {
+                console.log(`🔍 Submitting checkin for user ${user.telegramId}, checklist ${id}`);
+                
+                // 🛠️ FIXED: Refresh user before submission to avoid version conflicts
+                const refreshedUser = await refreshUser(user);
+                if (!refreshedUser) {
+                    await sendTelegramMessage(bot, chatId, 'Error refreshing user data.');
+                    return;
+                }
+
+                const checklistBefore = await getChecklistById(refreshedUser.telegramId, id);
+                if (checklistBefore && checklistBefore.checkedIn) {
                     await sendTelegramMessage(bot, chatId, 'You have already submitted this check-in.');
                     return;
                 }
 
-                const submittedUser = await submitCheckin(user, id);
-                const submittedChecklist = await getChecklistById(user.telegramId, id);
-                const finalMessage = createFinalCheckinMessage(submittedUser, submittedChecklist);
+                // 🛠️ FIXED: Use the refreshed user and capture the returned updated user
+                const updatedUser = await submitCheckin(refreshedUser, id);
+                
+                if (!updatedUser) {
+                    await sendTelegramMessage(bot, chatId, 'Error submitting check-in.');
+                    return;
+                }
+
+                console.log(`✅ Checkin submitted, new streak: ${updatedUser.streak}`);
+                
+                // 🛠️ FIXED: Get the checklist from the updated user object
+                const submittedChecklist = updatedUser.checklists.find(c => c._id.toString() === id);
+                
+                if (!submittedChecklist) {
+                    await sendTelegramMessage(bot, chatId, 'Checklist not found after submission.');
+                    return;
+                }
+
+                const finalMessage = createFinalCheckinMessage(updatedUser, submittedChecklist);
 
                 await bot.editMessageText(finalMessage, {
                     chat_id: chatId,

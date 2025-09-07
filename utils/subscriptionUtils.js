@@ -1,4 +1,4 @@
-// File: src/utils/subscriptionUtils.js - UPDATED WITH TIER DIFFERENTIATION
+// File: src/utils/subscriptionUtils.js - UPDATED WITH STREAK FIX
 const moment = require('moment-timezone');
 const User = require('../models/user');
 const OpenAI = require('openai');
@@ -40,18 +40,22 @@ function getPlanDetails(planName) {
 
 // 🆕 TIER CHECK FUNCTIONS
 function isFreeUser(user) {
+    if (!user || !user.subscriptionPlan) return true;
     return user.subscriptionPlan === 'free' && user.subscriptionStatus === 'inactive';
 }
 
 function isBasicUser(user) {
+    if (!user || !user.subscriptionPlan) return false;
     return user.subscriptionPlan === 'basic' && user.subscriptionStatus === 'active';
 }
 
 function isPremiumUser(user) {
+    if (!user || !user.subscriptionPlan) return false;
     return user.subscriptionPlan === 'premium' && user.subscriptionStatus === 'active';
 }
 
 function hasTrialAccess(user) {
+    if (!user || !user.subscriptionPlan) return false;
     return user.subscriptionPlan === 'free-trial' && user.subscriptionStatus === 'trialing';
 }
 
@@ -63,8 +67,10 @@ function hasAutoTasks(user) {
     return !isFreeUser(user); // Free users manually set tasks
 }
 
+// 🛠️ FIXED: Streaks should work for Trial, Basic, and Premium users
 function hasStreaks(user) {
-    return !isFreeUser(user); // Free users no streaks
+    if (!user || !user.subscriptionPlan) return false;
+    return user.subscriptionPlan !== 'free'; // Trial, Basic, and Premium get streaks
 }
 
 function hasReflections(user) {
@@ -236,6 +242,12 @@ function getModelForUser(user) {
     return getPlanDetails(plan).model;
 }
 
+// 🆕 NEW FUNCTION: Check if user should get streak tracking
+function shouldGetStreakTracking(user) {
+    if (!user || !user.subscriptionPlan) return false;
+    return user.subscriptionPlan !== 'free'; // Trial, Basic, and Premium get streaks
+}
+
 module.exports = {
     getPlanDetails,
     hasAIUsageAccess,
@@ -248,8 +260,9 @@ module.exports = {
     hasTrialAccess,
     hasAIAccess,
     hasAutoTasks,
-    hasStreaks,
+    hasStreaks, // 🛠️ Now correctly returns true for Trial, Basic, Premium
     hasReflections,
     hasSmartReminders,
-    canAccessFeature
+    canAccessFeature,
+    shouldGetStreakTracking // 🆕 New helper function
 };

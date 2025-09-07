@@ -1,8 +1,8 @@
-// File: src/controllers/userController.js - UPDATED FOR TIER SUPPORT
+// File: src/controllers/userController.js - FINAL FIXED VERSION
 const User = require('../models/user');
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
-const { isFreeUser } = require('../utils/subscriptionUtils'); // 🆕 Import tier check
+const { shouldGetStreakTracking } = require('../utils/subscriptionUtils');
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -20,10 +20,9 @@ async function getOrCreateUser(telegramId) {
                 $setOnInsert: {
                     telegramId: telegramId,
                     streak: 0,
-                    lastCheckin: null,
+                    lastCheckinDate: null, // 🛠️ FIXED: Changed from lastCheckin to lastCheckinDate
                     goalMemory: { text: null },
                     checklists: [],
-                    lastCheckinDate: null,
                     consecutiveChecks: 0,
                     subscriptionStatus: 'trialing',
                     subscriptionPlan: 'free-trial', 
@@ -244,11 +243,14 @@ async function handleDailyCheckinReset(user) {
             const isToday = lastCheckinMoment.isSame(todayStart, 'day');
             
             if (!isYesterday && !isToday) {
-                console.log(`❌ User ${refreshedUser.telegramId} missed check-in. Streak reset.`);
-                // 🆕 Only reset streak for non-free users
-                if (!isFreeUser(refreshedUser)) {
+                console.log(`❌ User ${refreshedUser.telegramId} missed check-in.`);
+                
+                // 🛠️ FIXED: Only reset streak for users who should have streak tracking
+                if (shouldGetStreakTracking(refreshedUser)) {
                     refreshedUser.streak = 0;
+                    console.log(`🔄 Reset streak for user ${refreshedUser.telegramId} to 0`);
                 }
+                
                 await refreshedUser.save();
             }
         }
@@ -354,20 +356,31 @@ async function toggleTaskCompletion(telegramId, checklistId, taskIndex) {
  */
 async function submitCheckin(user, checklistId) {
     if (!user) {
+        console.log("❌ submitCheckin: User is null");
         return null;
     }
 
     try {
+        console.log(`🔍 submitCheckin called for user ${user.telegramId}, checklist ${checklistId}`);
+        
         // Refresh the user to avoid version conflicts
         const refreshedUser = await refreshUser(user);
-        if (!refreshedUser) return null;
+        if (!refreshedUser) {
+            console.log("❌ submitCheckin: Refreshed user is null");
+            return null;
+        }
+
+        console.log(`🔍 User ${refreshedUser.telegramId} subscription: ${refreshedUser.subscriptionPlan}, status: ${refreshedUser.subscriptionStatus}`);
+        console.log(`🔍 shouldGetStreakTracking: ${shouldGetStreakTracking(refreshedUser)}`);
 
         const checklist = refreshedUser.checklists.find(c => c._id.toString() === checklistId);
         if (!checklist) {
+            console.log(`❌ Checklist ${checklistId} not found for user ${refreshedUser.telegramId}`);
             return null;
         }
 
         if (checklist.checkedIn) {
+            console.log(`ℹ️ Checklist ${checklistId} already checked in for user ${refreshedUser.telegramId}`);
             return refreshedUser; // Already checked in today
         }
 
@@ -376,31 +389,42 @@ async function submitCheckin(user, checklistId) {
             ? moment(refreshedUser.lastCheckinDate).tz(TIMEZONE).startOf('day')
             : null;
 
-        // 🆕 Only update streak for non-free users
-        if (!isFreeUser(refreshedUser)) {
+        console.log(`🔍 Today: ${todayStart.format()}, Last checkin: ${lastCheckinDate ? lastCheckinDate.format() : 'Never'}`);
+        console.log(`🔍 Current streak before update: ${refreshedUser.streak}`);
+
+        // 🛠️ FIXED: Use the correct streak tracking logic
+        if (shouldGetStreakTracking(refreshedUser)) {
             if (!lastCheckinDate) {
                 // First check-in ever
                 refreshedUser.streak = 1;
+                console.log(`📈 First check-in for user ${refreshedUser.telegramId}, streak set to 1`);
             } else {
                 const diff = todayStart.diff(lastCheckinDate, 'days');
+                console.log(`🔍 Days since last checkin: ${diff}`);
 
                 if (diff === 0) {
                     // Already checked in today
+                    console.log(`ℹ️ User ${refreshedUser.telegramId} already checked in today`);
                     return refreshedUser;
                 } else if (diff === 1) {
                     // Consecutive day → increment streak
                     refreshedUser.streak = (refreshedUser.streak || 0) + 1;
+                    console.log(`📈 Incremented streak for user ${refreshedUser.telegramId} to ${refreshedUser.streak}`);
                 } else {
                     // Missed at least one day → reset streak
                     refreshedUser.streak = 1;
+                    console.log(`🔄 Reset streak for user ${refreshedUser.telegramId} to 1 (missed ${diff-1} days)`);
                 }
             }
+        } else {
+            console.log(`ℹ️ Free user ${refreshedUser.telegramId} - no streak tracking`);
         }
 
         checklist.checkedIn = true;
         refreshedUser.lastCheckinDate = todayStart.toDate();
 
         await refreshedUser.save();
+        console.log(`✅ Check-in saved for user ${refreshedUser.telegramId}, streak: ${refreshedUser.streak}`);
         return refreshedUser;
     } catch (error) {
         console.error("❌ Error submitting check-in:", error);
@@ -505,7 +529,7 @@ async function recoverIncorrectlyExpiredTrials() {
 module.exports = {
     getOrCreateUser,
     createAndSaveChecklist,
-    createManualChecklist, // 🆕 Export manual checklist function
+    createManualChecklist,
     getChecklistByDate,
     handleDailyCheckinReset,
     toggleTaskCompletion,
@@ -514,6 +538,6 @@ module.exports = {
     addImportantMemory,
     getChecklistById,
     updateChecklist,
-    refreshUser,
+    refreshUser, // ✅ Make sure this is exported
     recoverIncorrectlyExpiredTrials
 };

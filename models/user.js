@@ -1,5 +1,4 @@
 // File: src/models/user.js - CORRECTED & COMPLETE VERSION
-
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -16,9 +15,11 @@ const userSchema = new mongoose.Schema({
         enum: ['awaiting_goal', 'onboarded'],
         default: 'awaiting_goal',
     },
-    // The main goal memory field for long-term context
+    // The main goal memory field for long-term context - SINGLE DEFINITION
     goalMemory: {
         text: String,
+        monthlyTarget: String,      // Monthly breakdown
+        weeklyTarget: String,       // Weekly breakdown  
         lastUpdated: Date,
     },
     checklists: [{
@@ -26,11 +27,25 @@ const userSchema = new mongoose.Schema({
         weeklyGoal: String,
         tasks: [{
             text: String,
-            completed: { type: Boolean, default: false },
+            completed: { 
+                type: Boolean, 
+                default: false 
+            },
+            isCarriedOver: {  // For tasks carried over from previous day
+                type: Boolean,
+                default: false
+            }
         }],
-        checkedIn: { type: Boolean, default: false },
+        checkedIn: { 
+            type: Boolean, 
+            default: false 
+        },
+        isManual: {  // For free user manual checklists
+            type: Boolean,
+            default: false
+        }
     }],
-    // Streak tracking
+    // Streak tracking - FIXED FIELD NAME CONSISTENCY
     streak: {
         type: Number,
         default: 0
@@ -39,24 +54,26 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    lastCheckInDate: Date,
-    // Reflection tracking fields - NEW
+    lastCheckinDate: Date, // FIXED: Consistent lowercase 'i' to match your code
+    // Reflection tracking fields
     lastWeeklyReflectionDate: Date,
     lastMonthlyReflectionDate: Date,
     // Subscription & AI fields
-   subscriptionStatus: {
-    type: String,
-    enum: ['trialing', 'active', 'inactive', 'trial'],
-    default: 'trialing'
-},
-
-    subscriptionPlan: String,
+    subscriptionStatus: {
+        type: String,
+        enum: ['trialing', 'active', 'inactive', 'trial'],
+        default: 'trialing'
+    },
+    subscriptionPlan: {
+        type: String,
+        default: 'free-trial'
+    },
     subscriptionEndDate: Date,
     gptVersion: {
         type: String,
         default: 'gpt-4o-mini'
     },
-    // AI usage is now tracked as a sub-document array
+    // AI usage tracking
     aiUsage: [{
         date: Date,
         generalCount: {
@@ -68,38 +85,44 @@ const userSchema = new mongoose.Schema({
             default: 0
         }
     }],
-    // Memory fields from your original schema
-    recentChatMemory: [{
+    // Memory fields
+    recentChats: [{  // FIXED: Changed from recentChatMemory to match your code
         text: String,
         timestamp: Date,
     }],
-    importantMemory: [{
+    importantMemories: [{  // FIXED: Changed from importantMemory to match your code
         text: String,
         timestamp: Date,
     }],
-
-    // ⭐ NEW FIELD: Tracks pending actions for conversational flow
+    // Pending actions for conversational flow
     pendingAction: {
         type: {
             type: String,
-            enum: ['editGoal'], // We can add more action types in the future if needed
+            enum: ['editGoal', 'manual_tasks', 'ai_goal_breakdown'],
             default: null
         },
         goalId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'MiniGoal',
             default: null
+        },
+        // Additional fields for different action types
+        goalText: String,
+        monthlyTarget: String,
+        currentStep: String
+    },
+    // Handles vague mini-goal reminder flows
+    pendingReminder: {
+        task: { 
+            type: String, 
+            default: null 
+        },
+        waitingForTime: { 
+            type: Boolean, 
+            default: false 
         }
     },
-
-    // ⭐ NEW FIELD: Handles vague mini-goal reminder flows
-    pendingReminder: {
-        task: { type: String, default: null },
-        waitingForTime: { type: Boolean, default: false }
-    },
-
-    
-    // Other fields from your original schema
+    // Other fields
     timelineFlag: {
         type: String,
         default: 'ok'
@@ -126,12 +149,18 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    goalMemory: {
-    text: String,
-    monthlyTarget: String,      // NEW - for monthly breakdown
-    weeklyTarget: String,       // NEW - for weekly breakdown  
-    lastUpdated: Date,
-},
+    consecutiveChecks: {  // For tracking consecutive check-ins
+        type: Number,
+        default: 0
+    }
+}, {
+    timestamps: true  // Adds createdAt and updatedAt automatically
 });
+
+// Index for better performance
+userSchema.index({ telegramId: 1 });
+userSchema.index({ 'checklists.date': 1 });
+userSchema.index({ subscriptionStatus: 1, subscriptionPlan: 1 });
+userSchema.index({ 'aiUsage.date': 1 });
 
 module.exports = mongoose.model('User', userSchema);
