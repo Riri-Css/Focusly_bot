@@ -392,34 +392,40 @@ async function submitCheckin(user, checklistId) {
         console.log(`🔍 Today: ${todayStart.format()}, Last checkin: ${lastCheckinDate ? lastCheckinDate.format() : 'Never'}`);
         console.log(`🔍 Current streak before update: ${refreshedUser.streak}`);
 
-        // 🛠️ FIXED: Use the correct streak tracking logic
-        if (shouldGetStreakTracking(refreshedUser)) {
-            if (!lastCheckinDate) {
-                // First check-in ever
-                refreshedUser.streak = 1;
-                console.log(`📈 First check-in for user ${refreshedUser.telegramId}, streak set to 1`);
-            } else {
-                const diff = todayStart.diff(lastCheckinDate, 'days');
-                console.log(`🔍 Days since last checkin: ${diff}`);
-
-                if (diff === 0) {
-                    // Already checked in today
-                    console.log(`ℹ️ User ${refreshedUser.telegramId} already checked in today`);
-                    return refreshedUser;
-                } else if (diff === 1) {
-                    // Consecutive day → increment streak
-                    refreshedUser.streak = (refreshedUser.streak || 0) + 1;
-                    console.log(`📈 Incremented streak for user ${refreshedUser.telegramId} to ${refreshedUser.streak}`);
-                } else {
-                    // Missed at least one day → reset streak
-                    refreshedUser.streak = 1;
-                    console.log(`🔄 Reset streak for user ${refreshedUser.telegramId} to 1 (missed ${diff-1} days)`);
-                }
-            }
+        // 🛠️ FIXED: Use the correct streak tracking logic with edge case handling
+if (shouldGetStreakTracking(refreshedUser)) {
+    if (!lastCheckinDate) {
+        if (refreshedUser.streak > 0) {
+            // 🆕 SPECIAL CASE: User has a streak but no lastCheckinDate
+            // This means there was a previous bug where lastCheckinDate wasn't saved
+            console.log(`⚠️ User has streak ${refreshedUser.streak} but no lastCheckinDate. Maintaining current streak.`);
+            // Don't reset the streak, just continue with the existing value
         } else {
-            console.log(`ℹ️ Free user ${refreshedUser.telegramId} - no streak tracking`);
+            // First check-in ever
+            refreshedUser.streak = 1;
+            console.log(`📈 First check-in for user ${refreshedUser.telegramId}, streak set to 1`);
         }
+    } else {
+        const diff = todayStart.diff(lastCheckinDate, 'days');
+        console.log(`🔍 Days since last checkin: ${diff}`);
 
+        if (diff === 0) {
+            // Already checked in today
+            console.log(`ℹ️ User ${refreshedUser.telegramId} already checked in today`);
+            return refreshedUser;
+        } else if (diff === 1) {
+            // Consecutive day → increment streak
+            refreshedUser.streak = (refreshedUser.streak || 0) + 1;
+            console.log(`📈 Incremented streak for user ${refreshedUser.telegramId} to ${refreshedUser.streak}`);
+        } else {
+            // Missed at least one day → reset streak
+            refreshedUser.streak = 1;
+            console.log(`🔄 Reset streak for user ${refreshedUser.telegramId} to 1 (missed ${diff-1} days)`);
+        }
+    }
+} else {
+    console.log(`ℹ️ Free user ${refreshedUser.telegramId} - no streak tracking`);
+}
         checklist.checkedIn = true;
         refreshedUser.lastCheckinDate = todayStart.toDate();
 
@@ -437,6 +443,43 @@ async function submitCheckin(user, checklistId) {
  * @param {User} user The user document.
  * @param {string} chatText The text of the chat message.
  */
+
+/**
+ * REPAIR: Fix users with inconsistent streak data (streak > 0 but lastCheckinDate is null)
+ * Run this once after deploying the fix
+ */
+async function repairStreakInconsistencies() {
+    try {
+        const users = await User.find({
+            $or: [
+                { streak: { $gt: 0 }, lastCheckinDate: null },
+                { streak: 0, lastCheckinDate: { $ne: null } }
+            ]
+        });
+
+        console.log(`🔧 Found ${users.length} users with inconsistent streak data`);
+
+        for (const user of users) {
+            if (user.streak > 0 && !user.lastCheckinDate) {
+                // Set lastCheckinDate to today minus streak days
+                const estimatedLastCheckin = moment().subtract(user.streak, 'days').toDate();
+                user.lastCheckinDate = estimatedLastCheckin;
+                console.log(`🔧 Repaired user ${user.telegramId}: set lastCheckinDate to ${estimatedLastCheckin} for streak ${user.streak}`);
+            } else if (user.streak === 0 && user.lastCheckinDate) {
+                // Reset lastCheckinDate for users with 0 streak but have a date
+                user.lastCheckinDate = null;
+                console.log(`🔧 Repaired user ${user.telegramId}: reset lastCheckinDate for 0 streak`);
+            }
+            
+            await user.save();
+        }
+
+        console.log(`✅ Streak repair complete: ${users.length} users fixed`);
+    } catch (error) {
+        console.error('❌ Error repairing streak inconsistencies:', error);
+    }
+}
+
 async function addRecentChat(user, chatText) {
     if (!user) {
         console.error("User object is null, cannot add chat.");
@@ -539,5 +582,6 @@ module.exports = {
     getChecklistById,
     updateChecklist,
     refreshUser, // ✅ Make sure this is exported
-    recoverIncorrectlyExpiredTrials
+    recoverIncorrectlyExpiredTrials,
+    repairStreakInconsistencies // 🆕 Add this export
 };
