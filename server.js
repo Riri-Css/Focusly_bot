@@ -48,7 +48,7 @@ app.post(`/bot${process.env.BOT_TOKEN}`, async (req, res) => {
 });
 
 // === Paystack Webhook ===
-app.use('/paystack/webhook', paystackWebhook);
+app.use('/', paystackWebhook);
 
 // === Health check ===
 app.get('/', (req, res) => {

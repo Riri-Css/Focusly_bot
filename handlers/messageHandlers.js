@@ -460,46 +460,49 @@ async function handleMessage(bot, msg) {
         const command = userInput.toLowerCase().split(' ')[0];
 
         if (command === '/allowaccess') {
-            if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
-                return sendTelegramMessage(bot, chatId, '🚫 You are not authorized to use this command.');
-            }
-            const parts = userInput.split(' ');
-            if (parts.length !== 3) {
-                return sendTelegramMessage(bot, chatId, 'Usage: /allowaccess <telegramId> <plan>');
-            }
-            const targetTelegramId = parts[1];
-            const plan = parts[2].toLowerCase();
-            if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
-                try {
-                    const updatedUser = await updateSubscription(targetTelegramId, plan);
-                    if (updatedUser) {
-                        await sendTelegramMessage(
-                            bot,
-                            chatId,
-                            `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`
-                        );
-                        await sendTelegramMessage(
-                            bot,
-                            chatId,
-                            `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
-                        );
-                    } else {
-                        await sendTelegramMessage(bot, chatId, `User with ID ${targetTelegramId} not found.`);
-                    }
-                } catch (error) {
-                    console.error('❌ Error with /allowaccess command:', error);
-                    await sendTelegramMessage(bot, chatId, `❌ An error occurred while updating the subscription.`);
-                }
-            } else {
+    if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
+        return sendTelegramMessage(bot, chatId, '🚫 You are not authorized to use this command.');
+    }
+    const parts = userInput.split(' ');
+    if (parts.length !== 3) {
+        return sendTelegramMessage(bot, chatId, 'Usage: /allowaccess <telegramId> <plan>');
+    }
+    const targetTelegramId = parts[1];
+    const plan = parts[2].toLowerCase();
+    
+    if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
+        try {
+            const updatedUser = await updateSubscription(targetTelegramId, plan);
+            if (updatedUser) {
+                // ✅ Send confirmation to ADMIN (chatId)
                 await sendTelegramMessage(
                     bot,
-                    chatId,
-                    `Invalid plan. Please use 'premium', 'basic', 'pro', or 'free'.`
+                    chatId, // This is the admin's chat ID
+                    `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`
                 );
+                
+                // 🛠️ FIX: Send congratulatory message to USER (targetTelegramId)
+                await sendTelegramMessage(
+                    bot,
+                    targetTelegramId, // This is the user's Telegram ID
+                    `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
+                );
+            } else {
+                await sendTelegramMessage(bot, chatId, `User with ID ${targetTelegramId} not found.`);
             }
-            return;
+        } catch (error) {
+            console.error('❌ Error with /allowaccess command:', error);
+            await sendTelegramMessage(bot, chatId, `❌ An error occurred while updating the subscription.`);
         }
-
+    } else {
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            `Invalid plan. Please use 'premium', 'basic', 'pro', or 'free'.`
+        );
+    }
+    return;
+}
         if (command === '/testbutton') {
             await sendTelegramMessage(bot, chatId, 'Click a button below:', {
                 reply_markup: {
