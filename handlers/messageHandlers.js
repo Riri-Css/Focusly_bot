@@ -311,13 +311,30 @@ async function listUserGoals(bot, user, chatId) {
     }
 }
 
-// 🆕 Function to handle free user manual task input
+// 🆕 Function to handle free user manual task input - FIXED VERSION
 async function handleFreeUserTaskInput(user, userInput, bot, chatId) {
-    const tasks = userInput.split('\n').map(task => task.trim()).filter(Boolean);
+    const tasks = userInput.split('\n')
+        .map(task => task.trim())
+        .filter(task => task.length > 0);
+    
+    if (tasks.length === 0) {
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            "❌ *No Tasks Provided*\n\n" +
+            "I need actual tasks, not empty lines! \n\n" +
+            "💡 *Example:*\n" +
+            "• Complete project report\n" +
+            "• Gym workout - 30 mins\n" +
+            "• Read chapter 5\n\n" +
+            "Send your tasks again, one per line!"
+        );
+        return;
+    }
     
     const manualChecklist = {
         _id: new mongoose.Types.ObjectId(),
-        weeklyGoal: user.goalMemory?.text || "Manual Goal",
+        weeklyGoal: user.goalMemory?.text || "Your Goal",
         tasks: tasks.map(task => ({
             text: task,
             completed: false,
@@ -328,15 +345,96 @@ async function handleFreeUserTaskInput(user, userInput, bot, chatId) {
         isManual: true
     };
     
+    // Remove any existing checklist for today to avoid duplicates
+    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+    user.checklists = user.checklists.filter(checklist => 
+        !moment(checklist.date).isSame(today, 'day')
+    );
+    
     user.checklists.unshift(manualChecklist);
     user.pendingAction = null;
     await user.save();
     
-    const messageText = `✅ Manual tasks set! Here's your checklist:\n\n${createChecklistMessage(manualChecklist)}`;
+    const messageText = `✅ *Tasks Set Successfully!* \n\n` +
+                       `Here's your manual checklist for today:\n\n` +
+                       `${createChecklistMessage(manualChecklist)}\n\n` +
+                       `💪 *Now go get things done!*`;
+    
     const keyboard = createChecklistKeyboard(manualChecklist);
     
     await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
 }
+
+// 🆕 Function to handle /tasks command for free users - FIXED VERSION
+async function handleTasksCommand(user, bot, chatId) {
+    if (!isFreeUser(user)) {
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            "🤖 *AI-Powered Tasks* \n\n" +
+            "Your plan includes automatic task generation! \n\n" +
+            "Use /checkin to get your AI-generated daily tasks. 🚀"
+        );
+        return;
+    }
+    
+    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+    const existingChecklist = user.checklists.find(checklist => 
+        moment(checklist.date).isSame(today, 'day') && checklist.isManual
+    );
+
+    if (existingChecklist) {
+        const messageText = `📋 *Existing Tasks Found* \n\n` +
+                           `You already have tasks set for today:\n\n` +
+                           `${createChecklistMessage(existingChecklist)}\n\n` +
+                           `Want to set new tasks? Send them now (one per line):`;
+        
+        const keyboard = createChecklistKeyboard(existingChecklist);
+        await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
+    } else {
+        await sendTelegramMessage(
+            bot,
+            chatId,
+            `📋 *Manual Task Setting* \n\n` +
+            `Send your daily tasks (one per line):\n\n` +
+            `✨ *Example:*\n` +
+            `• Complete project report\n` +
+            `• Gym workout - 30 mins\n` +
+            `• Read chapter 5\n\n` +
+            `💡 *Tip:* Be specific and realistic!\n\n` +
+            `🎯 *Your Goal:* ${user.goalMemory?.text || "Not set yet"}`
+        );
+    }
+    
+    user.pendingAction = { type: 'manual_tasks' };
+    await user.save();
+}
+
+// 🆕 Add this function to migrate existing free users
+async function migrateExistingFreeUsers() {
+    try {
+        const freeUsers = await User.find({ 
+            subscriptionPlan: 'free',
+            subscriptionStatus: 'inactive'
+        });
+        
+        for (const user of freeUsers) {
+            // Reset any paid features that might have been incorrectly set
+            user.hasStreaks = false;
+            user.hasReflections = false;
+            user.hasSmartReminders = false;
+            user.aiUsage = [];
+            
+            await user.save();
+            console.log(`✅ Migrated free user ${user.telegramId} to proper free plan restrictions`);
+        }
+    } catch (error) {
+        console.error('❌ Error migrating free users:', error);
+    }
+}
+
+// Call migration on startup
+migrateExistingFreeUsers();
 
 // Main message handler
 async function handleMessage(bot, msg) {
@@ -803,21 +901,25 @@ async function handleMessage(bot, msg) {
         }
 
         // --- AI-powered conversational intent handling ---
-        // 🆕 FREE USERS: Block AI access
-        if (isFreeUser(user)) {
-            await sendTelegramMessage(
-                bot,
-                chatId,
-                "🤖 AI Features are for subscribed users only!\n\n" +
-                "Free users manually set their own tasks without AI assistance.\n\n" +
-                "✨ Upgrade to Basic or Premium for:\n" +
-                "• AI-powered conversations\n" +
-                "• Smart goal guidance\n" +
-                "• Strategy recommendations\n" +
-                "• Behavioral insights\n\n" +
-                "Type /subscription to upgrade!"
-            );
-            return;
+        // 🆕 FREE USERS: Block AI access - ENHANCED CHECK
+        if (isFreeUser(user) && !user.pendingAction) {
+            const allowedCommands = ['/start', '/setgoal', '/tasks', '/goals', '/subscription', '/remember'];
+            
+            if (!allowedCommands.includes(command)) {
+                await sendTelegramMessage(
+                    bot,
+                    chatId,
+                    "🚫 *AI Features Locked* \n\n" +
+                    "Free plan doesn't include AI conversations. \n\n" +
+                    "✨ *Upgrade to Basic or Premium for:*\n" +
+                    "• AI-powered guidance\n" +
+                    "• Strategy recommendations\n" +
+                    "• Behavioral insights\n" +
+                    "• Smart task generation\n\n" +
+                    "Type /subscription to upgrade! 💎"
+                );
+                return;
+            }
         }
 
         const model = await checkAIUsageAndGetModel(user, chatId, bot);
@@ -895,7 +997,8 @@ async function handleMessage(bot, msg) {
         await sendTelegramMessage(
             bot,
             chatId,
-            'Something went wrong while processing your message. Please try again.'
+            'Something went wrong while processing your message. Please try again in a moment. \n\n' +
+            'If the problem continues, contact support. 🛠️'
         );
     }
 }
