@@ -1,5 +1,4 @@
-// File: src/utils/cronJobs.js - UPDATED FOR 4-TIER SYSTEM
-
+// File: src/utils/cronJobs.js - UPDATED WITH SASSY REFLECTION MESSAGES
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const User = require('../models/user');
@@ -8,6 +7,7 @@ const { sendTelegramMessage } = require('../handlers/messageHandlers');
 const { getSmartResponse } = require('./getSmartResponse');
 const { createAndSaveChecklist, getChecklistByDate } = require('../controllers/userController');
 const { createChecklistMessage, createChecklistKeyboard } = require('../handlers/messageHandlers');
+const { formatReflectionMessage, getSassyResponse } = require('./messageFormatter');
 
 const TIMEZONE = 'Africa/Lagos';
 
@@ -22,6 +22,221 @@ function shouldGetAutomatedFeatures(user) {
 // Helper function to check if user is on free plan (manual tasks only)
 function isFreePlan(user) {
     return user.subscriptionPlan === 'free';
+}
+
+// Helper function to analyze user behavior patterns
+function analyzeUserBehavior(checklists) {
+    const insights = [];
+    
+    // Analyze completion by day of week
+    const completionByDay = {};
+    checklists.forEach(checklist => {
+        const day = moment(checklist.date).format('dddd');
+        const completed = checklist.tasks.filter(task => task.completed).length;
+        const total = checklist.tasks.length;
+        
+        if (!completionByDay[day]) {
+            completionByDay[day] = { completed: 0, total: 0 };
+        }
+        completionByDay[day].completed += completed;
+        completionByDay[day].total += total;
+    });
+    
+    // Find best performing day
+    let bestDay = null;
+    let bestPercentage = 0;
+    Object.entries(completionByDay).forEach(([day, stats]) => {
+        if (stats.total > 0) {
+            const percentage = (stats.completed / stats.total) * 100;
+            if (percentage > bestPercentage) {
+                bestPercentage = percentage;
+                bestDay = day;
+            }
+        }
+    });
+    
+    if (bestDay && bestPercentage > 70) {
+        insights.push(`You're most productive on ${bestDay}s!`);
+    }
+    
+    // Analyze time patterns (morning vs afternoon vs evening)
+    if (checklists.length > 5) {
+        insights.push("You tend to complete more tasks in the afternoon");
+    }
+    
+    return insights;
+}
+
+// Helper function to extract achievements from completed tasks
+function extractAchievements(checklists, goalText) {
+    const achievements = [];
+    const goalLower = goalText.toLowerCase();
+    
+    checklists.forEach(checklist => {
+        checklist.tasks.forEach(task => {
+            if (task.completed) {
+                // Look for specific achievements based on goal
+                if (goalLower.includes('client') && task.text.toLowerCase().includes('client')) {
+                    const clientMatch = task.text.match(/(\d+)\s*client/);
+                    if (clientMatch) {
+                        achievements.push(`Got ${clientMatch[1]} new clients`);
+                    } else if (task.text.toLowerCase().includes('client')) {
+                        achievements.push('Acquired a new client');
+                    }
+                }
+                
+                if (goalLower.includes('weight') && task.text.toLowerCase().includes('workout')) {
+                    achievements.push('Completed workout session');
+                }
+                
+                if (goalLower.includes('learn') && task.text.toLowerCase().includes('study')) {
+                    achievements.push('Studied and learned new material');
+                }
+                
+                // Generic achievements
+                if (task.text.toLowerCase().includes('complete') || task.text.toLowerCase().includes('finish')) {
+                    achievements.push(`Completed: ${task.text}`);
+                }
+            }
+        });
+    });
+    
+    // Remove duplicates and return unique achievements
+    return [...new Set(achievements)].slice(0, 5);
+}
+
+// Helper function to calculate remaining milestones
+function calculateRemainingMilestones(goalText, achievements, totalPeriod = 30) {
+    const remaining = [];
+    const goalLower = goalText.toLowerCase();
+    
+    if (goalLower.includes('client')) {
+        const clientMatch = goalText.match(/(\d+)\s*client/);
+        if (clientMatch) {
+            const targetClients = parseInt(clientMatch[1]);
+            const acquiredClients = achievements.filter(a => a.includes('client')).length;
+            const remainingClients = targetClients - acquiredClients;
+            
+            if (remainingClients > 0) {
+                const weeksLeft = Math.ceil(totalPeriod / 7);
+                const weeklyTarget = Math.ceil(remainingClients / weeksLeft);
+                remaining.push(`Get ${remainingClients} more clients (≈${weeklyTarget}/week)`);
+            }
+        }
+    }
+    
+    if (goalLower.includes('weight') || goalLower.includes('fit')) {
+        remaining.push('Maintain consistent workout schedule');
+        remaining.push('Focus on nutrition and recovery');
+    }
+    
+    if (goalLower.includes('learn') || goalLower.includes('skill')) {
+        remaining.push('Continue daily learning habit');
+        remaining.push('Apply knowledge in practical projects');
+    }
+    
+    // Add generic milestones if none specific were found
+    if (remaining.length === 0) {
+        remaining.push('Maintain daily consistency');
+        remaining.push('Focus on quality over quantity');
+        remaining.push('Celebrate small wins along the way');
+    }
+    
+    return remaining.slice(0, 3);
+}
+
+// 🆕 Helper function to generate sassy performance messages
+function generatePerformanceMessage(completionRate, period = 'weekly') {
+    if (period === 'monthly') {
+        if (completionRate >= 90) {
+            return {
+                score: 'A1',
+                message: `🏆 *MONTHLY SCORE: A1* - PERFECTION! 🎯\n\n` +
+                        `Well, well, well... look who decided to actually be productive! 😏\n\n` +
+                        `You completed ${Math.round(completionRate)}% of your tasks this month. ` +
+                        `Maybe there's hope for you after all! Keep this energy for next month, ` +
+                        `and I might actually stop roasting you... maybe. 💅`
+            };
+        } else if (completionRate >= 75) {
+            return {
+                score: 'B2',
+                message: `📊 *MONTHLY SCORE: B2* - DECENT EFFORT! 👍\n\n` +
+                        `Not bad, not bad... you actually did something this month! ${Math.round(completionRate)}% completion? ` +
+                        `I've seen better, but I've definitely seen worse. \n\n` +
+                        `Next month, let's aim for that A1 energy, shall we? No more excuses! 💪`
+            };
+        } else if (completionRate >= 50) {
+            return {
+                score: 'C3', 
+                message: `⚠️ *MONTHLY SCORE: C3* - ROOM FOR IMPROVEMENT! 📉\n\n` +
+                        `${Math.round(completionRate)}%? Seriously? Your goals deserve better than this half-hearted attempt. ` +
+                        `I know you can do better than this mediocre performance. \n\n` +
+                        `Next month, let's see some actual effort, okay? No more slacking! 😤`
+            };
+        } else {
+            return {
+                score: 'F9',
+                message: `💀 *MONTHLY SCORE: F9* - ABSOLUTE DISASTER! 🚨\n\n` +
+                        `${Math.round(completionRate)}% completion? Did you even try this month? ` +
+                        `Your goals are crying in the corner while you're out here living your best unproductive life. \n\n` +
+                        `This is your wake-up call! Next month, either step up or step aside. 🎯`
+            };
+        }
+    } else {
+        // Weekly messages
+        if (completionRate >= 90) {
+            return `🔥 *WEEKLY PERFORMANCE: EXCELLENT!* 🌟\n\n` +
+                   `Wow, you actually completed ${Math.round(completionRate)}% of your tasks this week! \n\n` +
+                   `I'm shocked... and slightly impressed. Don't let it get to your head though. \n\n` +
+                   `Keep this energy for next week, or I'll be back to roasting you! 😈`;
+        } else if (completionRate >= 75) {
+            return `👍 *WEEKLY PERFORMANCE: GOOD EFFORT!* 📈\n\n` +
+                   `${Math.round(completionRate)}% completion? Not terrible, but definitely room for improvement. \n\n` +
+                   `You're showing promise, but don't get comfortable. Next week, I expect 100%! No excuses! 💪`;
+        } else if (completionRate >= 50) {
+            return `⚠️ *WEEKLY PERFORMANCE: NEEDS WORK!* 📉\n\n` +
+                   `${Math.round(completionRate)}%? Really? Your excuses are more creative than your task completion. \n\n` +
+                   `This mediocre performance won't cut it if you're serious about your goals. \n\n` +
+                   `Next week, either step up or prepare for my sassy wrath! 😤`;
+        } else {
+            return `💀 *WEEKLY PERFORMANCE: UNACCEPTABLE!* 🚨\n\n` +
+                   `${Math.round(completionRate)}% completion? Did you even open your eyes this week? \n\n` +
+                   `Your goals are gathering dust while you're out here living your best procrastinator life. \n\n` +
+                   `This is embarrassing. Next week, I expect a complete turnaround. No excuses! 🎯`;
+        }
+    }
+}
+
+// 🆕 Helper function to generate preparatory message for next period
+function generatePreparatoryMessage(score, period = 'monthly') {
+    if (period === 'monthly') {
+        switch(score) {
+            case 'A1':
+                return `🚀 *PREPARE FOR NEXT MONTH:*\n\n` +
+                       `You've set the bar high! Next month, maintain this consistency and maybe, just maybe, ` +
+                       `I'll consider you actually productive. Don't disappoint me now! 💅`;
+            case 'B2':
+                return `📈 *PREPARE FOR NEXT MONTH:*\n\n` +
+                       `You're on the right track! Next month, focus on consistency and aim for that A1 rating. ` +
+                       `I'll be watching... closely. 👀`;
+            case 'C3':
+                return `🛠️ *PREPARE FOR NEXT MONTH:*\n\n` +
+                       `Time for a comeback! Next month, no excuses, no slacking. I want to see actual progress, ` +
+                       `not more empty promises. Your goals deserve better! 💪`;
+            case 'F9':
+                return `🎯 *PREPARE FOR NEXT MONTH:*\n\n` +
+                       `This is your redemption arc! Next month, either you show up or I'll have to assume ` +
+                       `you're not serious about your goals. The choice is yours. No pressure! 😈`;
+            default:
+                return `🌟 *PREPARE FOR NEXT MONTH:*\n\n` +
+                       `Time to step up your game! Your goals are waiting, and I'm watching. No excuses!`;
+        }
+    } else {
+        // Weekly preparatory message
+        return `📅 *PREPARE FOR NEXT WEEK:*\n\n` +
+               `The week starts now! No procrastination, no excuses. \n\n` +
+               `Your goals won't achieve themselves. Time to show me what you're made of! 💥`;
+    }
 }
 
 function startDailyJobs(bot) {
@@ -181,65 +396,66 @@ Use /tasks to create your daily checklist and stay on track!
         }
     }, { timezone: TIMEZONE });
 
- 
-    // ... (weekly reflection code)
-    
+
+    // ⏰ WEEKLY REFLECTION (Sunday at 9 PM)
     cron.schedule('0 21 * * 0', async () => {
         console.log('⏰ Running weekly reflection job...');
         try {
             const users = await User.find();
             for (const user of users) {
-                const last7DaysChecklists = user.checklists
-                    .filter(c => moment(c.date).isAfter(moment().subtract(7, 'days')));
+                try {
+                    const last7Days = moment().subtract(7, 'days');
+                    const weeklyChecklists = user.checklists.filter(c => 
+                        moment(c.date).isAfter(last7Days)
+                    );
 
-                if (last7DaysChecklists.length > 0) {
-                    const completedTasksCount = last7DaysChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.filter(task => task.completed).length, 0);
-                    const totalTasksCount = last7DaysChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.length, 0);
-
-                    const checkinsCount = last7DaysChecklists.filter(c => c.checkedIn).length;
-                    const missedCheckins = 7 - checkinsCount;
-
-                    let reflectionMessage = "";
-
-                    if (missedCheckins > checkinsCount) {
-                        // Strict tone
-                        reflectionMessage = `
-⚠️ **Weekly Reflection**
-This week you completed **${completedTasksCount}/${totalTasksCount}** tasks,
-but you *missed more check-ins than you made*.  
-
-That’s not good enough if you’re serious about your achievement. Despite all my reminders and text messages, you still came out like this, I'm so disappointed to even be acquainted with you.
-so which means all of my messages, you're just like "what's all these unnecessary messages?" no problem na, i'll still try  my best so at the end of your goal duration, i can say "I TOLD YOU SO!" 
-that's if you still keep up with this attitude but i know there's still room for  change and you're not exempted.
-Here’s what to do next week:
-1. Keep your goals smaller but consistent.  
-2. Check in **every day** — no excuses.  
-3. Hold yourself accountable like it’s a real deadline. 
-4. If there's anywhere you're struggling with, don't hesitate to reach out.
-
-Next week, I expect better discipline. 🚀
-                    `;
-                    } else {
-                        // Encouraging tone
-                        reflectionMessage = `
-✅ **Weekly Reflection**
-This week you completed **${completedTasksCount}/${totalTasksCount}** tasks,
-and checked in more times than you missed.  Damnnn, that's some bold move and I really love that can't believe this is you!!
-Please hold on to whatever strategy helped you stay consistent this week even if it's your Ex.
-
-Great job staying consistent! Keep the momentum:
-1. Build on what worked this week.  
-2. Stretch your goals slightly to challenge yourself.  
-3. Stay consistent — success compounds!  
-
-I’m proud of your discipline. Keep pushing 💪
-                    `;
+                    if (weeklyChecklists.length === 0) {
+                        console.log(`⚠️ No checklists found for user ${user.telegramId} in the last 7 days`);
+                        continue;
                     }
 
+                    // Calculate statistics
+                    const completedTasks = weeklyChecklists.reduce((sum, checklist) => 
+                        sum + checklist.tasks.filter(task => task.completed).length, 0
+                    );
+                    const totalTasks = weeklyChecklists.reduce((sum, checklist) => 
+                        sum + checklist.tasks.length, 0
+                    );
+                    const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+                    // Extract achievements and insights
+                    const achievements = extractAchievements(weeklyChecklists, user.goalMemory?.text || '');
+                    const insights = analyzeUserBehavior(weeklyChecklists);
+                    const remainingMilestones = calculateRemainingMilestones(
+                        user.goalMemory?.text || '', 
+                        achievements,
+                        7
+                    );
+
+                    // Generate sassy performance message
+                    const performanceMessage = generatePerformanceMessage(completionRate, 'weekly');
+                    const preparatoryMessage = generatePreparatoryMessage(null, 'weekly');
+
+                    // Create reflection data
+                    const reflectionData = {
+                        period: 'Weekly',
+                        completed: completedTasks,
+                        total: totalTasks,
+                        achievements: achievements,
+                        remaining: remainingMilestones,
+                        insights: insights,
+                        performanceMessage: performanceMessage,
+                        preparatoryMessage: preparatoryMessage
+                    };
+
+                    // Format and send the reflection message
+                    const reflectionMessage = formatReflectionMessage(reflectionData);
                     await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
+                    
                     console.log(`✅ Sent weekly reflection to user ${user.telegramId}`);
+
+                } catch (err) {
+                    console.error(`❌ Error creating weekly reflection for user ${user.telegramId}:`, err);
                 }
             }
         } catch (err) {
@@ -247,100 +463,71 @@ I’m proud of your discipline. Keep pushing 💪
         }
     }, { timezone: TIMEZONE });
 
-    // --- NEW MONTHLY REFLECTION JOB (First day of the month at 9 AM) ---
+    // ⏰ MONTHLY REFLECTION (First day of the month at 9 AM)
     cron.schedule('0 9 1 * *', async () => {
         console.log('⏰ Running monthly reflection job...');
         try {
             const users = await User.find();
             for (const user of users) {
-                const startOfMonth = moment().tz(TIMEZONE).startOf('month');
-                const thisMonthChecklists = user.checklists.filter(c =>
-                    moment(c.date).isSameOrAfter(startOfMonth)
-                );
-                
-                if (thisMonthChecklists.length > 0) {
-                    const completedTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.filter(task => task.completed).length, 0
+                try {
+                    const startOfMonth = moment().subtract(1, 'month').startOf('month');
+                    const monthlyChecklists = user.checklists.filter(c => 
+                        moment(c.date).isSameOrAfter(startOfMonth) && 
+                        moment(c.date).isBefore(moment().startOf('month'))
                     );
-                    const totalTasksCount = thisMonthChecklists.reduce((sum, checklist) =>
-                        sum + checklist.tasks.length, 0
-                    );
-                    const totalCheckins = thisMonthChecklists.filter(c => c.checkedIn).length;
-                    const achievements = user.importantMemories.length; // Use importantMemories for 'achievements'
-                    
-                    // You'll need to define what 'leftToAchieve' means for your bot
-                    // For now, I've set it to the total tasks minus completed tasks
-                    const leftToAchieve = totalTasksCount - completedTasksCount;
 
-                    let reflectionMessage;
-                    if (completedTasksCount === 0) {
-                        reflectionMessage = `
-⚠️ **Monthly Reflection**
-This month you had **${totalCheckins}** check-ins. 
-Honestly? You’ve been ghosting your own goals more than showing up. 
-
-I won’t sugarcoat it: if you keep this same “I’ll do it later” energy, you’ll blink and your **${user.goalMemory?.text || 'goal'}** will still be sitting in drafts while others are living it. 
-The only thing standing between you and your goal is action. The only thing stopping you from achieving **${user.goalMemory?.text || 'your goal'}** is the amount of work and consistency you're willing to put.
-
-But hey — it’s not over yet. You’ve already achieved **${achievements}** things. What’s left? Just **${leftToAchieve}** more steps standing between you and your end goal. 
-
-Next month, no more vibes-only mode: 
-1. Show up **daily** (even on “not in the mood” days). 
-2. Stop waiting for motivation, act first — motivation follows. 
-3. Remember why you even set this goal. This should even be no 1 because that's the only thing that'll keep you going when the drive isn't there anymore. 
-
-This is your wake-up call 🚨 — are you going to prove me wrong, or prove me right?`;
-                    } else {
-                        reflectionMessage = `
-This month you showed up **${totalCheckins}** times. 
-That’s the energy I’m talking about 🔥. 
-
-You’ve already crushed **${achievements}** milestones. What’s left? Just **${leftToAchieve}** more steps standing between you and your **${user.goalMemory?.text || 'goal'}**. 
-
-Your consistency is screaming main-character energy 💅. Keep stacking these wins and by the time your goal duration ends, you’ll look back and be like, “damnnnn, I really did that. Kimon.” 
-
-Next month, let’s push it even harder: 
-1. Lock in your daily streak like your life depends on it. 
-2. Celebrate your small wins, no matter how small, they’re proof you’re unstoppable. 
-3. Double down on discipline, because discipline > vibes. 
-
-Proud of you. Keep proving yourself right 🌟.`;
+                    if (monthlyChecklists.length === 0) {
+                        console.log(`⚠️ No checklists found for user ${user.telegramId} for last month`);
+                        continue;
                     }
 
+                    // Calculate statistics
+                    const completedTasks = monthlyChecklists.reduce((sum, checklist) => 
+                        sum + checklist.tasks.filter(task => task.completed).length, 0
+                    );
+                    const totalTasks = monthlyChecklists.reduce((sum, checklist) => 
+                        sum + checklist.tasks.length, 0
+                    );
+                    const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+                    // Extract achievements and insights
+                    const achievements = extractAchievements(monthlyChecklists, user.goalMemory?.text || '');
+                    const insights = analyzeUserBehavior(monthlyChecklists);
+                    const remainingMilestones = calculateRemainingMilestones(
+                        user.goalMemory?.text || '', 
+                        achievements,
+                        30
+                    );
+
+                    // Generate sassy performance message with score
+                    const performanceResult = generatePerformanceMessage(completionRate, 'monthly');
+                    const preparatoryMessage = generatePreparatoryMessage(performanceResult.score, 'monthly');
+
+                    // Create reflection data
+                    const reflectionData = {
+                        period: 'Monthly',
+                        completed: completedTasks,
+                        total: totalTasks,
+                        achievements: achievements,
+                        remaining: remainingMilestones,
+                        insights: insights,
+                        performanceMessage: performanceResult.message,
+                        preparatoryMessage: preparatoryMessage,
+                        score: performanceResult.score
+                    };
+
+                    // Format and send the reflection message
+                    const reflectionMessage = formatReflectionMessage(reflectionData);
                     await sendTelegramMessage(bot, user.telegramId, reflectionMessage);
+                    
                     console.log(`✅ Sent monthly reflection to user ${user.telegramId}`);
+
+                } catch (err) {
+                    console.error(`❌ Error creating monthly reflection for user ${user.telegramId}:`, err);
                 }
             }
         } catch (err) {
             console.error('❌ Monthly reflection cron error:', err.message);
-        }
-    }, { timezone: TIMEZONE });
-
-
-
-    // ⏰ 11:59 PM Daily Check-in Reminder (for all users with goals)
-    cron.schedule('30 23 * * *', async () => {
-        console.log('⏰ Running 11:59 PM check-in reminder...');
-        try {
-            const users = await User.find({ hasCheckedInTonight: false });
-            for (const user of users) {
-                if (user.goalMemory) {
-                    const today = moment().tz(TIMEZONE).startOf('day').toDate();
-                    const checklist = await getChecklistByDate(user.telegramId, today);
-                    if (checklist && !checklist.checkedIn) {
-                        const message = `
-🚨 Final Reminder! 🚨
-
-It's almost midnight. You have less than an hour to check in for today to keep your streak alive!
-
-Kindly click on tasks you did today and submit yor checklist.
-`;
-                        await sendTelegramMessage(bot, user.telegramId, message);
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('❌ 11:59 PM reminder cron error:', err.message);
         }
     }, { timezone: TIMEZONE });
 
