@@ -9,6 +9,14 @@ const {
     setGoalMemory,
 } = require('../controllers/userController');
 
+const {
+    getSassyResponse,
+    formatChecklistMessage,
+    formatAIResponse,
+    formatChecklistKeyboard,
+    createFinalCheckinMessage: createSassyFinalCheckinMessage
+} = require('../utils/messageFormatter');
+
 const { 
     hasAIUsageAccess, 
     trackAIUsage,
@@ -66,7 +74,7 @@ async function sendTelegramMessage(bot, chatId, messageText, options = {}) {
     }
 }
 
-// Helper function to create checklist message body
+// Helper function to create checklist message body (for backward compatibility)
 function createChecklistMessage(checklist) {
     if (!checklist || !checklist.tasks || checklist.tasks.length === 0) {
         return 'You have no tasks for today.';
@@ -81,7 +89,7 @@ function createChecklistMessage(checklist) {
     return tasksText;
 }
 
-// Helper function to create inline keyboard for checklist
+// Helper function to create inline keyboard for checklist (for backward compatibility)
 function createChecklistKeyboard(checklist) {
     if (!checklist || !checklist.tasks || !Array.isArray(checklist.tasks) || !checklist._id) {
         console.error('❌ Invalid checklist provided or missing _id to createChecklistKeyboard.');
@@ -109,7 +117,7 @@ function createChecklistKeyboard(checklist) {
     return { inline_keyboard: [...taskButtons, submitButton] };
 }
 
-// Helper function to create final check-in message
+// Helper function to create final check-in message (for backward compatibility)
 function createFinalCheckinMessage(user, checklist) {
     const completedTasksCount = checklist.tasks.filter((task) => task.completed).length;
     const totalTasksCount = checklist.tasks.length;
@@ -460,49 +468,50 @@ async function handleMessage(bot, msg) {
         const command = userInput.toLowerCase().split(' ')[0];
 
         if (command === '/allowaccess') {
-    if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
-        return sendTelegramMessage(bot, chatId, '🚫 You are not authorized to use this command.');
-    }
-    const parts = userInput.split(' ');
-    if (parts.length !== 3) {
-        return sendTelegramMessage(bot, chatId, 'Usage: /allowaccess <telegramId> <plan>');
-    }
-    const targetTelegramId = parts[1];
-    const plan = parts[2].toLowerCase();
-    
-    if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
-        try {
-            const updatedUser = await updateSubscription(targetTelegramId, plan);
-            if (updatedUser) {
-                // ✅ Send confirmation to ADMIN (chatId)
-                await sendTelegramMessage(
-                    bot,
-                    chatId, // This is the admin's chat ID
-                    `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`
-                );
-                
-                // 🛠️ FIX: Send congratulatory message to USER (targetTelegramId)
-                await sendTelegramMessage(
-                    bot,
-                    targetTelegramId, // This is the user's Telegram ID
-                    `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
-                );
-            } else {
-                await sendTelegramMessage(bot, chatId, `User with ID ${targetTelegramId} not found.`);
+            if (msg.from.id.toString() !== ADMIN_TELEGRAM_ID) {
+                return sendTelegramMessage(bot, chatId, '🚫 You are not authorized to use this command.');
             }
-        } catch (error) {
-            console.error('❌ Error with /allowaccess command:', error);
-            await sendTelegramMessage(bot, chatId, `❌ An error occurred while updating the subscription.`);
+            const parts = userInput.split(' ');
+            if (parts.length !== 3) {
+                return sendTelegramMessage(bot, chatId, 'Usage: /allowaccess <telegramId> <plan>');
+            }
+            const targetTelegramId = parts[1];
+            const plan = parts[2].toLowerCase();
+            
+            if (['premium', 'basic', 'pro', 'free'].includes(plan)) {
+                try {
+                    const updatedUser = await updateSubscription(targetTelegramId, plan);
+                    if (updatedUser) {
+                        // ✅ Send confirmation to ADMIN (chatId)
+                        await sendTelegramMessage(
+                            bot,
+                            chatId, // This is the admin's chat ID
+                            `✅ Successfully updated subscription for user ${targetTelegramId} to ${plan}.`
+                        );
+                        
+                        // 🛠️ FIX: Send congratulatory message to USER (targetTelegramId)
+                        await sendTelegramMessage(
+                            bot,
+                            targetTelegramId, // This is the user's Telegram ID
+                            `🎉 Congratulations! Your subscription has been manually updated to the **${plan}** plan. You now have full access to Focusly! Get started with /checkin.`
+                        );
+                    } else {
+                        await sendTelegramMessage(bot, chatId, `User with ID ${targetTelegramId} not found.`);
+                    }
+                } catch (error) {
+                    console.error('❌ Error with /allowaccess command:', error);
+                    await sendTelegramMessage(bot, chatId, `❌ An error occurred while updating the subscription.`);
+                }
+            } else {
+                await sendTelegramMessage(
+                    bot,
+                    chatId,
+                    `Invalid plan. Please use 'premium', 'basic', 'pro', or 'free'.`
+                );
+            }
+            return;
         }
-    } else {
-        await sendTelegramMessage(
-            bot,
-            chatId,
-            `Invalid plan. Please use 'premium', 'basic', 'pro', or 'free'.`
-        );
-    }
-    return;
-}
+
         if (command === '/testbutton') {
             await sendTelegramMessage(bot, chatId, 'Click a button below:', {
                 reply_markup: {
@@ -564,7 +573,7 @@ async function handleMessage(bot, msg) {
                 return sendTelegramMessage(
                     bot,
                     chatId,
-                    "You don't have a goal set yet! Use `/start` or `/setgoal` to define your weekly goal."
+                    "🎯 *Goal Setting Required!*\n\nYou don't have a goal set yet! Use `/setgoal` to define your weekly goal and start your productivity journey!"
                 );
             }
 
@@ -573,13 +582,18 @@ async function handleMessage(bot, msg) {
                 await sendTelegramMessage(
                     bot,
                     chatId,
-                    "📋 Free Plan - Manual Mode\n\n" +
-                    "Please set your daily tasks manually. Send your tasks (one per line):\n\n" +
-                    "Example:\n" +
-                    "Complete project report\n" +
-                    "Gym workout for 30 mins\n" +
-                    "Read chapter 5 of my book\n\n" +
-                    "💡 Upgrade to Basic for AI-powered automatic task generation!"
+                    `📋 *Free Plan - Manual Mode*\n\n` +
+                    `Please set your daily tasks manually. Send your tasks (one per line):\n\n` +
+                    `*Example:*\n` +
+                    `Complete project report\n` +
+                    `Gym workout for 30 mins\n` +
+                    `Read chapter 5 of my book\n\n` +
+                    `💡 *Upgrade to Basic for:*\n` +
+                    `• AI-powered task generation\n` +
+                    `• Smart goal tracking\n` +
+                    `• Weekly reflections\n` +
+                    `• Streak motivation\n\n` +
+                    `Use /subscription to upgrade! 🚀`
                 );
                 user.pendingAction = { type: 'manual_tasks' };
                 await user.save();
@@ -592,12 +606,12 @@ async function handleMessage(bot, msg) {
 
             if (checklist) {
                 if (checklist.checkedIn) {
-                    const finalMessage = createFinalCheckinMessage(user, checklist);
+                    const finalMessage = createSassyFinalCheckinMessage(user, checklist);
                     return sendTelegramMessage(bot, chatId, finalMessage);
                 } else {
-                    const messageText = `Good morning! Here is your daily checklist to push you towards your goal:\n\n**Weekly Goal:** ${user.goalMemory.text}\n\n` +
-                        createChecklistMessage(checklist);
-                    const keyboard = createChecklistKeyboard(checklist);
+                    // 🆕 USE NEW FORMATTING
+                    const messageText = formatChecklistMessage(checklist);
+                    const keyboard = formatChecklistKeyboard(checklist);
                     return sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 }
             } else {
@@ -610,16 +624,16 @@ async function handleMessage(bot, msg) {
 
                 if (aiResponse.intent === 'create_checklist' && aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                     const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                    const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
-                        createChecklistMessage(newChecklist);
-                    const keyboard = createChecklistKeyboard(newChecklist);
+                    // 🆕 USE NEW FORMATTING
+                    const messageText = formatChecklistMessage(newChecklist);
+                    const keyboard = formatChecklistKeyboard(newChecklist);
                     await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                     await trackAIUsage(user, 'checklist');
                 } else {
                     await sendTelegramMessage(
                         bot,
                         chatId,
-                        "I couldn't create a checklist based on your goal. Can you try setting a more specific goal?"
+                        "🤔 *Hmm, I need more details!*\n\nI couldn't create a checklist based on your goal. Can you try being more specific about what you want to achieve?"
                     );
                 }
             }
@@ -632,7 +646,7 @@ async function handleMessage(bot, msg) {
                 return sendTelegramMessage(
                     bot,
                     chatId,
-                    "Please provide a goal to set. Example: `/setgoal Learn to code in Python`"
+                    "🎯 *Goal Setting Required!*\n\nPlease provide a goal to set. Example: `/setgoal Learn to code in Python`\n\nMake it specific and measurable! 💪"
                 );
             }
 
@@ -648,14 +662,18 @@ async function handleMessage(bot, msg) {
                 await sendTelegramMessage(
                     bot,
                     chatId,
-                    "✅ Goal set manually. As a free user, you'll need to create your own daily tasks.\n\n" +
-                    "💡 Upgrade to Basic or Premium for:\n" +
-                    "• AI-powered goal breakdowns\n" +
-                    "• Automatic daily task generation\n" +
-                    "• Timeline validation\n" +
-                    "• Weekly/Monthly reflections\n" +
-                    "• Streak tracking & motivation\n\n" +
-                    "Type /subscription to upgrade!"
+                    `✅ *Goal Set Successfully!*\n\n` +
+                    `Your goal: *${newGoalText}*\n\n` +
+                    `📋 *As a free user:*\n` +
+                    `• You'll create tasks manually\n` +
+                    `• No AI assistance available\n` +
+                    `• Basic reminders only\n\n` +
+                    `💎 *Upgrade for:*\n` +
+                    `• AI-powered task generation\n` +
+                    `• Smart goal breakdowns\n` +
+                    `• Progress tracking\n` +
+                    `• Weekly reflections\n\n` +
+                    `Use /subscription to unlock premium features! 🚀`
                 );
                 return;
             }
@@ -712,10 +730,11 @@ async function handleMessage(bot, msg) {
 
             if (aiChecklistResponse.intent === 'create_checklist' && aiChecklistResponse.daily_tasks && aiChecklistResponse.daily_tasks.length > 0) {
                 const newChecklist = await createAndSaveChecklist(user.telegramId, aiChecklistResponse);
-                const messageText = `✅ Got it! Your new weekly goal is: *${newChecklist.weeklyGoal}*. Let's break it down.\n\n` +
-                    `Here is your first daily checklist:\n\n` +
-                    createChecklistMessage(newChecklist);
-                const keyboard = createChecklistKeyboard(newChecklist);
+                const messageText = `🎯 *Goal Set Successfully!*\n\n` +
+                       `Your new weekly goal: *${newChecklist.weeklyGoal}*\n\n` +
+                       `📋 *Here's your first daily plan:*\n\n` +
+                       formatChecklistMessage(newChecklist);
+                const keyboard = formatChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 await trackAIUsage(user, 'checklist');
             } else {
@@ -815,7 +834,9 @@ async function handleMessage(bot, msg) {
                 taskContext: aiResponse.task_context || userInput
             });
             
-            await sendTelegramMessage(bot, chatId, guidanceResponse.message);
+            // 🆕 USE NEW FORMATTING
+            const formattedResponse = formatAIResponse(guidanceResponse.message, { isMotivational: true });
+            await sendTelegramMessage(bot, chatId, formattedResponse);
             await trackAIUsage(user, 'guidance');
             return;
         }
@@ -827,7 +848,9 @@ async function handleMessage(bot, msg) {
                 goalAspect: aiResponse.goal_aspect || "general strategy"
             });
             
-            await sendTelegramMessage(bot, chatId, strategyResponse.message);
+            // 🆕 USE NEW FORMATTING
+            const formattedResponse = formatAIResponse(strategyResponse.message, { isCritical: true });
+            await sendTelegramMessage(bot, chatId, formattedResponse);
             await trackAIUsage(user, 'strategy');
             return;
         }
@@ -843,9 +866,9 @@ async function handleMessage(bot, msg) {
             }
             if (aiResponse.daily_tasks && aiResponse.daily_tasks.length > 0) {
                 const newChecklist = await createAndSaveChecklist(user.telegramId, aiResponse);
-                const messageText = `Got it. Here is your daily checklist to get you started:\n\n**Weekly Goal:** ${newChecklist.weeklyGoal}\n\n` +
-                    createChecklistMessage(newChecklist);
-                const keyboard = createChecklistKeyboard(newChecklist);
+                // 🆕 USE NEW FORMATTING
+                const messageText = formatChecklistMessage(newChecklist);
+                const keyboard = formatChecklistKeyboard(newChecklist);
                 await sendTelegramMessage(bot, chatId, messageText, { reply_markup: keyboard });
                 await trackAIUsage(user, 'checklist');
             } else {
@@ -856,7 +879,9 @@ async function handleMessage(bot, msg) {
                 );
             }
         } else if (aiResponse.message) {
-            await sendTelegramMessage(bot, chatId, aiResponse.message);
+            // 🆕 USE NEW FORMATTING
+            const formattedResponse = formatAIResponse(aiResponse.message);
+            await sendTelegramMessage(bot, chatId, formattedResponse);
             await trackAIUsage(user, 'general');
         } else {
             await sendTelegramMessage(
