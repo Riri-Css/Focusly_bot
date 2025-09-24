@@ -160,43 +160,50 @@ async function hasAIUsageAccess(user, type = 'general') {
                 console.log(`Trial expired for user ${refreshedUser.telegramId}`);
                 return false;
             }
+
+            // Premium & Basic users → daily checklist always guaranteed, but with monthly cap
+        if (type === 'checklist') {
+            if (!refreshedUser.checklistUsage || !Array.isArray(refreshedUser.checklistUsage)) {
+                refreshedUser.checklistUsage = [];
+            }
+
+            const startOfMonth = moment().tz(TIMEZONE).startOf('month').toDate();
+
+            // Count how many checklists this month
+            const monthUsage = refreshedUser.checklistUsage.filter(u =>
+                u.date && moment(u.date).tz(TIMEZONE).isSame(startOfMonth, 'month')
+            );
+
+            const totalChecklists = monthUsage.reduce((acc, u) => acc + (u.count || 0), 0);
+
+            // Allow up to 32 checklists per month
+            return totalChecklists < 32;
         }
+        }
+
+        // General AI usage (still daily capped by plan)
+        const planLimits = getPlanDetails(refreshedUser.subscriptionPlan).aiUsageLimit;
+        if (!planLimits) return false;
+
+        const today = moment().tz(TIMEZONE).startOf('day').toDate();
 
         if (!refreshedUser.aiUsage || !Array.isArray(refreshedUser.aiUsage)) {
             refreshedUser.aiUsage = [];
             await refreshedUser.save();
         }
 
-        if (refreshedUser.subscriptionPlan === 'premium') {
-            return true;
-        }
-
-        const planLimits = getPlanDetails(refreshedUser.subscriptionPlan).aiUsageLimit;
-        if (!planLimits) {
-            return false;
-        }
-        
-        const today = moment().tz(TIMEZONE).startOf('day').toDate();
-
-        let usage = refreshedUser.aiUsage.find(u => 
+        let usage = refreshedUser.aiUsage.find(u =>
             u.date && moment(u.date).tz(TIMEZONE).isSame(today, 'day')
         );
-        
-        if (!usage) {
-            return true;
-        }
 
-        if (type === 'general') {
-            return usage.generalCount < planLimits.general;
-        } else if (type === 'checklist') {
-            return usage.checklistCount < planLimits.checklist;
-        }
+        if (!usage) return true;
 
-        return false;
+        return usage.generalCount < planLimits.general;
     } catch (error) {
         console.error('Error in hasAIUsageAccess:', error);
-        return true;
+        return true; // fail safe → don’t block
     }
+        
 }
 
 /**
